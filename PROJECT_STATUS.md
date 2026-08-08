@@ -2,7 +2,7 @@
 
 > **Use this file to resume work if the conversation/context resets.**
 > Paste this whole document into a new chat and say:
-> **"Continue from Stage 11. Last delivered ZIP: aether-stage10.zip"**
+> **"Continue from Stage 12. Last delivered ZIP: aether-stage11.zip"**
 > (update the stage number/zip name to whatever is current at that time)
 
 ---
@@ -122,7 +122,8 @@ starting the next one.** Documentation is never postponed to the end.
 | 8 | Wire LLM into Init | /init generates persona voice profile via LLMFactory, saves it ✅ **DONE** |
 | 9 | Breeth Client (connection only) | breeth_client.py — connect, write/read test fact, standalone script ✅ **DONE** |
 | 10 | Breeth Namespace on Init | /init creates Breeth namespace, stores breeth_agent_ref, SQLite mirror stub ✅ **DONE** |
-| 11 | Topic Sources Config + Fetcher | topic_sources.json + topic_discovery.py, raw candidates, no caching yet ⬅ **NEXT UP** |
+| 11 | Topic Sources Config + Fetcher | topic_sources.json + topic_discovery.py, raw candidates, no caching yet ✅ **DONE** |
+| 12 | Sources Cache | sources_cache wired in — dedup fetch, hash check ⬅ **NEXT UP** |
 | 12 | Sources Cache | sources_cache wired in — dedup fetch, hash check |
 | 13 | Fingerprinting | Normalized title+keywords+source → fingerprint function, unit-testable |
 | 14 | Editorial Judgment | editorial_judgment.py — accept/reject + rejected_topics logging |
@@ -327,25 +328,48 @@ starting the next one.** Documentation is never postponed to the end.
   2/5/6/7/8/9 verification scripts end-to-end, no regressions
 - Commit: `feat(backend): create per-agent Breeth namespace on init with local mirror`
 
+
+### ✅ Stage 11 — Topic Sources Config + Fetcher (DONE)
+- `backend/app/core/topic_sources.json` — 3 configured sources: Hacker
+  News (Algolia Search API, industry), arXiv cs.AI (RSS, research),
+  MIT Technology Review AI feed (RSS, commentary)
+- `backend/app/services/topic_discovery.py` — `TopicCandidate`
+  dataclass; `_parse_hn_algolia()` / `_parse_rss()` parsers (stdlib
+  `ElementTree`, no new dependency); `fetch_source()` (per-source
+  fetch+parse, catches and logs network/parse failures without
+  raising); `discover_topics()` (aggregates across all sources,
+  injectable `sources`/`client` for testing)
+- No `sources_cache` dedup and no fingerprinting yet — every call
+  currently re-returns everything; that's Stages 12/13
+- `backend/scripts/test_topic_discovery.py` — standalone verification,
+  fully offline via `httpx.MockTransport`: config validation, both
+  parsers against canned response bodies (incl. missing-field skip
+  cases), and a 3-source aggregation test where one source 503s and
+  the other two still come back correctly
+- Verified: all 4 checks pass; re-ran all 7 prior verification scripts
+  (Stages 2, 5, 6, 7, 8, 9, 10), no regressions
+- Commit: `feat(backend): add topic sources config and discovery fetcher`
+
 ## 14. Last Delivered File
 
-**`aether-stage10.zip`** — cumulative project ZIP containing everything
-through Stage 10 (backend + frontend skeletons, all DB models incl.
-the new Breeth mirror table, `/init` fully wired with
-persona/LLM/Breeth-namespace logic, persona bible, LLM provider
-abstraction with two providers, Breeth client, and docs for stages
-0–10).
+**`aether-stage11.zip`** — cumulative project ZIP containing everything
+through Stage 11 (backend + frontend skeletons, all DB models incl.
+Breeth mirror, `/init` fully wired with persona/LLM/Breeth-namespace
+logic, persona bible, LLM provider abstraction with two providers,
+Breeth client, topic sources config + discovery fetcher, and docs for
+stages 0–11).
 
 ## 15. How To Resume
 
 Paste this document into a new conversation and say:
 
-> "Continue from Stage 11. Last delivered ZIP: aether-stage10.zip"
+> "Continue from Stage 12. Last delivered ZIP: aether-stage11.zip"
 
 Claude should then:
 1. Re-read this doc to restore full context (scope, stack, rules, plan)
-2. Start Stage 11 exactly as planned: `topic_sources.json` (source
-   list/config) + `topic_discovery.py` (fetches raw topic candidates
-   from those sources) — no caching/dedup yet, that's Stage 12
+2. Start Stage 12 exactly as planned: wire the `SourceCache` model
+   (Stage 2, unused until now) into the discovery path — hash each
+   candidate and skip ones already seen, so repeated
+   `discover_topics()` calls stop re-surfacing the same items forever
 3. Continue following Rule 13 (docs + log + commit + ZIP + stop for
    approval) for every stage from there on

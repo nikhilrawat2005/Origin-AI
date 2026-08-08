@@ -10,7 +10,7 @@ This is **not** a chatbot and **not** a generic content generator.
 
 ## Project Status
 
-🚧 **Stage 10 of 20 — Breeth Namespace on Init**
+🚧 **Stage 11 of 20 — Topic Sources Config + Fetcher**
 
 See `docs/AI_USAGE_LOG.md` for full development history and
 `docs/prompts/` for the prompt/decision log of every stage.
@@ -37,13 +37,15 @@ aether/
 │   │   ├── core/
 │   │   │   ├── config.py    # env-driven settings (single source of truth)
 │   │   │   ├── database.py  # SQLAlchemy engine/session, init_db()
-│   │   │   └── persona.json # static editorial identity (the "persona bible")
+│   │   │   ├── persona.json # static editorial identity (the "persona bible")
+│   │   │   └── topic_sources.json # configured discovery sources (HN, arXiv, MIT Tech Review)
 │   │   ├── routes/
 │   │   │   └── agent.py     # POST /api/agent/init
 │   │   ├── services/
 │   │   │   ├── agent_service.py    # get_or_create_agent — creates agent, generates persona_description via LLM, creates Breeth namespace
 │   │   │   ├── persona_service.py  # loads persona.json, builds voice-profile prompt
 │   │   │   ├── breeth_client.py    # BreethClient — write_fact/search over Breeth's REST API
+│   │   │   ├── topic_discovery.py  # discover_topics() — fetch+parse raw candidates from configured sources
 │   │   │   └── llm/
 │   │   │       ├── base_provider.py        # LLMProvider ABC (generate/judge/summarize)
 │   │   │       ├── gemini_provider.py      # GeminiProvider — REST calls via httpx
@@ -59,7 +61,8 @@ aether/
 │   │   ├── test_llm_factory.py        # standalone LLMFactory/OpenRouter verification script
 │   │   ├── test_init_llm_wiring.py    # standalone /init + LLM-generation verification script
 │   │   ├── test_breeth_client.py      # standalone Breeth connection verification script
-│   │   └── test_breeth_namespace.py   # standalone Breeth namespace-on-init verification script
+│   │   ├── test_breeth_namespace.py   # standalone Breeth namespace-on-init verification script
+│   │   └── test_topic_discovery.py    # standalone topic-source config/parser verification script
 │   ├── requirements.txt
 │   └── .env.example
 ├── frontend/
@@ -293,6 +296,34 @@ curl -X POST http://localhost:8000/api/agent/init   # same agentId + breethAgent
 `breethAgentRef` will be `"agent-<agentId>"` on both calls. With a
 real `BREETH_API_KEY` set, the underlying `write_fact` call actually
 reaches Breeth and the mirrored row's `synced` flips to `True`.
+
+## Verifying Topic Sources Config + Fetcher (Stage 11)
+
+```bash
+cd backend
+python -m scripts.test_topic_discovery
+```
+
+This runs entirely offline via `httpx.MockTransport` — no live network
+access to Hacker News/arXiv/MIT Technology Review is needed to verify
+it. It confirms: `topic_sources.json` loads with all required fields
+on every configured source; `_parse_hn_algolia()` and `_parse_rss()`
+correctly turn canned response bodies into `TopicCandidate` objects,
+skipping individual items missing a title/url rather than crashing;
+and `discover_topics()`, given three fake sources where one returns a
+`503`, still returns the other two sources' candidates rather than
+raising. To see it hit the real configured sources (needs outbound
+network access to `hn.algolia.com` / `export.arxiv.org` /
+`technologyreview.com`, not available in this sandboxed dev
+container):
+
+```bash
+cd backend
+python -c "from app.services.topic_discovery import discover_topics; [print(c.source_name, '-', c.title) for c in discover_topics()]"
+```
+
+No caching/dedup yet — every call re-fetches and re-returns
+everything, including items seen on a previous run. That's Stage 12.
 
 ## Required Environment Variables
 

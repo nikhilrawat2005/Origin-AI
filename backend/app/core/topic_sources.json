@@ -1,0 +1,22 @@
+{
+  "sources": [
+    {
+      "name": "Hacker News (AI/ML)",
+      "type": "hn_algolia",
+      "url": "https://hn.algolia.com/api/v1/search_by_date?tags=story&query=AI%20OR%20LLM%20OR%20machine%20learning",
+      "category": "industry"
+    },
+    {
+      "name": "arXiv cs.AI",
+      "type": "rss",
+      "url": "http://export.arxiv.org/rss/cs.AI",
+      "category": "research"
+    },
+    {
+      "name": "MIT Technology Review — Artificial Intelligence",
+      "type": "rss",
+      "url": "https://www.technologyreview.com/topic/artificial-intelligence/feed",
+      "category": "commentary"
+    }
+  ]
+}

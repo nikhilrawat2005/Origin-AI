@@ -348,3 +348,41 @@ considering the stage done.
 - `PROJECT_STATUS.md`
 **Commit:** `feat(backend): create per-agent Breeth namespace on init with local mirror`
 **Prompt File:** `docs/prompts/11_stage10.md`
+
+---
+
+### Stage 11
+**Date:** 2026-08-08
+**AI Tool Used:** Claude (Sonnet 5)
+**Objective:** Topic Sources Config + Fetcher
+**Summary:** Added `app/core/topic_sources.json` — three configured
+sources spanning the categories the persona bible cares about:
+Hacker News via the Algolia Search API (`hn_algolia`, industry chatter),
+arXiv cs.AI's RSS feed (`rss`, research), and MIT Technology Review's
+AI topic feed (`rss`, commentary). Added
+`app/services/topic_discovery.py`: `TopicCandidate` (title, url,
+source_name, category, optional summary/published_at — deliberately
+minimal, no id/fingerprint yet), `_parse_hn_algolia()` and
+`_parse_rss()` (stdlib `xml.etree.ElementTree`, no new dependency),
+`fetch_source()` (fetches + parses one source, catching network/parse
+failures per-source so one bad feed can't take down discovery for the
+rest), and `discover_topics()` (aggregates across all configured
+sources, injectable `sources`/`client` params for testing). No
+caching/dedup against `sources_cache` yet — that's Stage 12. Verified
+entirely offline using `httpx.MockTransport`: canned Algolia and RSS
+response bodies confirm the parsers handle missing-field items
+correctly (skipped, not crashed-on), and a 3-source aggregation test
+where one source returns `503` confirms `discover_topics()` still
+returns the other two sources' candidates rather than raising —
+stronger offline coverage than the live-API stages (6/7/9) could get,
+since parsing logic doesn't require real network access to verify,
+only the live round-trip does (which those stages could only
+conditionally test, and this stage doesn't attempt at all since no
+live call is being made to a stateful third-party account).
+**Files Changed:**
+- `backend/app/core/topic_sources.json`
+- `backend/app/services/topic_discovery.py`
+- `backend/scripts/test_topic_discovery.py`
+- `README.md`
+**Commit:** `feat(backend): add topic sources config and discovery fetcher`
+**Prompt File:** `docs/prompts/12_stage11.md`
