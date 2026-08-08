@@ -10,7 +10,7 @@ This is **not** a chatbot and **not** a generic content generator.
 
 ## Project Status
 
-🚧 **Stage 1 of 20 — Repo + Backend Skeleton**
+🚧 **Stage 2 of 20 — Database Models**
 
 See `docs/AI_USAGE_LOG.md` for full development history and
 `docs/prompts/` for the prompt/decision log of every stage.
@@ -36,9 +36,13 @@ aether/
 │   │   ├── main.py          # FastAPI entrypoint + health check
 │   │   ├── core/
 │   │   │   └── config.py    # env-driven settings (single source of truth)
+│   │   ├── core/
+│   │   │   └── database.py  # SQLAlchemy engine/session, init_db()
 │   │   ├── routes/          # API routes (empty until Stage 4+)
 │   │   ├── services/        # business logic (empty until Stage 5+)
-│   │   └── models/          # SQLAlchemy models (empty until Stage 2)
+│   │   └── models/          # agents, posts, rejected_topics, sources_cache
+│   ├── scripts/
+│   │   └── test_models.py   # standalone DB model verification script
 │   ├── requirements.txt
 │   └── .env.example
 ├── frontend/                 # Next.js app (Stage 3+)
@@ -62,6 +66,17 @@ Then verify:
 curl http://localhost:8000/api/health
 # {"status":"ok","app":"aether-backend","env":"development"}
 ```
+
+## Verifying the Database Models (Stage 2)
+
+```bash
+cd backend
+python scripts/test_models.py
+```
+
+This creates all four tables against a throwaway SQLite file, inserts
+one row per table, reads it back, and asserts the round trip — no API
+layer required.
 
 ## Running the Frontend
 
