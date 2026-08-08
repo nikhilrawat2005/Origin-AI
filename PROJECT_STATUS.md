@@ -417,27 +417,129 @@ starting the next one.** Documentation is never postponed to the end.
   scripts (Stages 2, 5, 6, 7, 8, 9, 10, 11, 12, 13), no regressions
 - Commit: `feat(backend): add editorial judgment with fail-closed LLM accept/reject and rejected_topics logging`
 
+### ✅ Stage 15 — Memory Service (Breeth Dedup) (DONE)
+- `backend/app/services/memory_service.py` — `check_memory()`: Layer 1
+  local, authoritative, network-free exact match against
+  `posts.fingerprint` (Stage 13's algorithm, already stamped on every
+  `Post`); Layer 2 soft semantic search via `BreethClient.search()`
+  (Stage 9), scoped to the agent's own namespace
+  (`agent.breeth_agent_ref`, Stage 10), using a fuzzy keyword-overlap
+  check (`SEMANTIC_OVERLAP_THRESHOLD = 0.6`) over Breeth's `edges`
+  response to catch a same-story-different-source case fingerprinting
+  can't. `check_memory_batch()` batches it over a list.
+- Deliberately fails **open** on Breeth specifically (opposite posture
+  from Stage 14's fail-closed editorial judgment): a missing
+  `BREETH_API_KEY` or outage must never block an otherwise-novel,
+  already-accepted candidate, per "Known Constraints" #2 and the
+  PRD's "feed must grow on its own" success criterion. On a Breeth
+  failure, falls back to a best-effort local keyword scan over
+  `breeth_mirror_facts` (Stage 10's local mirror, whose own docstring
+  reserved this exact fallback for this stage) — typically empty
+  until Stage 17's publisher starts writing to it, which is expected.
+- Not wired into any route or scheduler yet — standalone functions
+  only, same posture as Stages 12 and 14.
+- `backend/scripts/test_memory_service.py` — standalone verification
+  with a fake Breeth client (no API key needed): Layer 1 fingerprint
+  match short-circuits with zero Breeth calls; a genuinely new
+  candidate passes with no matching edges; a semantically similar edge
+  is flagged; a Breeth exception falls back to the local mirror and,
+  empty, fails open; a Breeth exception plus a matching synced mirror
+  fact still flags a duplicate via the fallback; an agent with no
+  Breeth namespace yet skips the semantic check cleanly; batch
+  ordering via `check_memory_batch()`.
+- Verified: all 7 checks pass; re-ran all 11 prior verification
+  scripts (Stages 2, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14), no
+  regressions.
+- Commit: `feat(backend): add memory service with local fingerprint + Breeth semantic dedup against published topics, failing open on Breeth`
+
+### ✅ Stage 16 — Post Writer (DONE)
+- `backend/app/services/post_writer.py` — `write_post()`: takes the
+  whole accepted `JudgmentResult` (Stage 14, not just the candidate)
+  so the original editorial acceptance reason grounds the generated
+  rationale; builds a prompt from the candidate's concrete fields plus
+  that reason, calls `LLMProvider.generate()` (Stage 6/7) seeded with
+  the persona's full voice profile (Stage 5), and requires a strict
+  `TITLE:`/`RATIONALE:`/`CONTENT:` response, parsed positionally with
+  all three markers required, in order, non-empty.
+- Deliberately fails **loud** (`PostWriteError`) on any generation or
+  parsing failure — a third posture distinct from Stage 14's fail-
+  closed and Stage 15's fail-open, justified by there being no safe
+  placeholder post to fall back to.
+- `sources` populated with `[candidate.url]` only, matching
+  `persona.json`'s `sourcing_standards.minimum_sources: 1`; source
+  aggregation beyond the single URL a candidate carries is explicitly
+  out of scope for this stage.
+- Not wired into any route or scheduler yet — standalone function
+  only, same posture as Stages 12, 14, 15.
+- `backend/scripts/test_post_writer.py` — standalone verification with
+  a scripted fake provider (no API key needed): well-formed response
+  parses correctly with sources/fingerprint carried through; missing
+  marker raises; out-of-order sections raise; empty section raises;
+  provider exception raises `PostWriteError` without leaking the raw
+  exception; a rejected `JudgmentResult` raises immediately with zero
+  provider calls; empty response string raises.
+- Verified: all 7 checks pass; re-ran all 12 prior verification
+  scripts (Stages 2, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15), no
+  regressions.
+- Commit: `feat(backend): add post writer generating title/content/rationale via LLMFactory, failing loud on malformed output`
+
+### ✅ Stage 17 — Publisher (DONE)
+- `backend/app/services/publisher.py` — `publish_post()`: persists a
+  Stage 16 `WrittenPost` as a `Post` row (title, content, rationale,
+  JSON-encoded sources, fingerprint), then best-effort pushes a
+  `published` fact to Breeth via `BreethClient.write_fact()`, mirrored
+  locally to `breeth_mirror_facts` regardless of remote success —
+  reusing Stage 10's exact namespace-creation pattern rather than a
+  new one. The mirrored/pushed fact's `object` is the post's own
+  title so Stage 15's keyword-overlap matching has real text to
+  compare against once wired together. Skips the remote call (but
+  still mirrors locally, `group_id="unassigned"`) when the agent has
+  no Breeth namespace yet.
+- The `Post` row write itself is a plain, unconditional DB write — no
+  fail-open/fail-closed framing needed, unlike the Breeth call.
+- Not wired into any route or scheduler yet — standalone function
+  only, same posture as every service stage since Stage 12.
+- `backend/scripts/test_publisher.py` — standalone verification with
+  a fake Breeth client (no API key needed): Post persisted with
+  correct fields + generated id; successful Breeth write yields a
+  synced mirror fact with the post's title as object; a Breeth
+  exception still persists the Post and yields a non-synced mirror
+  fact; an agent with no namespace skips the remote call but still
+  persists + mirrors locally; two distinct posts create two
+  independent rows; a persisted fingerprint round-trips for a future
+  lookup.
+- Verified: all 6 checks pass; re-ran all 13 prior verification
+  scripts (Stages 2, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16), no
+  regressions.
+- Commit: `feat(backend): add publisher persisting posts and pushing best-effort published facts to Breeth`
+
 ## 14. Last Delivered File
 
-**`aether-stage14.zip`** — cumulative project ZIP containing everything
-through Stage 14 (backend + frontend skeletons, all DB models incl.
+**`aether-stage17.zip`** — cumulative project ZIP containing everything
+through Stage 17 (backend + frontend skeletons, all DB models incl.
 Breeth mirror, `/init` fully wired with persona/LLM/Breeth-namespace
 logic, persona bible, LLM provider abstraction with two providers,
 Breeth client, topic sources config + discovery fetcher, sources_cache
 dedup, title+keywords+source fingerprinting, LLM-driven editorial
-judgment with fail-closed accept/reject, and docs for stages 0–14).
+judgment with fail-closed accept/reject, memory service with local
+fingerprint + fail-open Breeth semantic dedup, LLM-driven post writer
+with fail-loud generation/parsing, publisher persisting posts + Breeth
+published facts, and docs for stages 0–17).
 
 ## 15. How To Resume
 
 Paste this document into a new conversation and say:
 
-> "Continue from Stage 15. Last delivered ZIP: aether-stage14.zip"
+> "Continue from Stage 18. Last delivered ZIP: aether-stage17.zip"
 
 Claude should then:
 1. Re-read this doc to restore full context (scope, stack, rules, plan)
-2. Start Stage 15 exactly as planned: `memory_service.py` — query
-   Breeth + the SQLite mirror for previously *published* topics before
-   an accepted candidate reaches the post writer, the layer of dedup
-   Stage 14's fingerprint-vs-rejected-topics check doesn't cover
+2. Start Stage 18 exactly as planned: Scheduler Wiring — chain Stages
+   11/12 → 14 → 15 → 16 → 17 (`discover_new_topics()` →
+   `judge_candidates()` (accepted only) → `check_memory_batch()`
+   (not-duplicate only) → `write_post()` → `publish_post()`) behind
+   APScheduler, driven by `PUBLISH_INTERVAL_MINUTES` from the
+   environment — the first point the full autonomous pipeline runs
+   end-to-end
 3. Continue following Rule 13 (docs + log + commit + ZIP + stop for
    approval) for every stage from there on

@@ -10,7 +10,7 @@ This is **not** a chatbot and **not** a generic content generator.
 
 ## Project Status
 
-🚧 **Stage 14 of 20 — Editorial Judgment**
+🚧 **Stage 17 of 20 — Publisher**
 
 See `docs/AI_USAGE_LOG.md` for full development history and
 `docs/prompts/` for the prompt/decision log of every stage.
@@ -49,6 +49,9 @@ aether/
 │   │   │   ├── sources_cache_service.py  # discover_new_topics() — URL-hash dedup against sources_cache
 │   │   │   ├── fingerprint.py      # compute_fingerprint() — normalized title+keywords+source near-duplicate hash
 │   │   │   ├── editorial_judgment.py  # judge_candidate(s)() — LLM accept/reject, logs rejected_topics
+│   │   │   ├── memory_service.py   # check_memory(_batch)() — posts.fingerprint + Breeth search dedup vs. published topics
+│   │   │   ├── post_writer.py      # write_post() — generates TITLE/RATIONALE/CONTENT via LLMFactory for an accepted, memory-cleared candidate
+│   │   │   ├── publisher.py        # publish_post() — persists Post row, pushes best-effort "published" fact to Breeth, mirrors locally
 │   │   │   └── llm/
 │   │   │       ├── base_provider.py        # LLMProvider ABC (generate/judge/summarize)
 │   │   │       ├── gemini_provider.py      # GeminiProvider — REST calls via httpx
@@ -68,7 +71,10 @@ aether/
 │   │   ├── test_topic_discovery.py    # standalone topic-source config/parser verification script
 │   │   ├── test_sources_cache.py      # standalone sources_cache dedup verification script
 │   │   ├── test_fingerprinting.py     # standalone fingerprinting verification script
-│   │   └── test_editorial_judgment.py # standalone editorial judgment verification script
+│   │   ├── test_editorial_judgment.py # standalone editorial judgment verification script
+│   │   ├── test_memory_service.py     # standalone memory service (Breeth dedup) verification script
+│   │   ├── test_post_writer.py        # standalone post writer verification script
+│   │   └── test_publisher.py          # standalone publisher verification script
 │   ├── requirements.txt
 │   └── .env.example
 ├── frontend/
@@ -435,6 +441,173 @@ Needs a real `GEMINI_API_KEY` (or `LLM_PROVIDER=openrouter` +
 without one, `judge()` raises and every candidate fails closed to
 REJECT (see "Known Constraints" in `PROJECT_STATUS.md`), which the
 script above will still run and print correctly.
+
+## Verifying the Memory Service (Stage 15)
+
+```bash
+cd backend
+python -m scripts.test_memory_service
+```
+
+Runs against an in-memory DB with a fake `BreethClient` (no
+network/API key needed). Confirms: a candidate whose fingerprint
+(Stage 13) matches an existing `Post` is flagged a duplicate purely
+locally, with zero Breeth calls made; a genuinely new candidate passes
+through when Breeth returns no matching edges; a candidate
+semantically similar to a Breeth edge (high keyword overlap) is
+flagged duplicate even with no local `Post` match; a Breeth call that
+raises falls back to a local keyword scan over `breeth_mirror_facts`
+instead of raising or rejecting outright, and — with that mirror also
+empty — the candidate passes through (fails **open**, unlike Stage
+14's fail-**closed** editorial judgment); a Breeth failure combined
+with a matching *synced* mirror fact still correctly flags a
+duplicate via that fallback; an agent with no Breeth namespace yet
+skips the semantic check cleanly; and `check_memory_batch()` processes
+a batch in order, reusing one client. Not wired into any route or
+scheduler yet — Stage 18 will chain it in:
+`discover_new_topics()` (Stage 12) → `judge_candidates()` (Stage 14,
+accepted only) → `check_memory_batch()` (this stage, not-duplicate
+only) → post writing (Stage 16) → publish (Stage 17):
+
+```bash
+cd backend
+python -c "
+from app.core.database import SessionLocal, init_db
+from app.models.agent import Agent
+from app.services.sources_cache_service import discover_new_topics
+from app.services.editorial_judgment import judge_candidates
+from app.services.memory_service import check_memory_batch
+init_db()
+db = SessionLocal()
+agent = db.query(Agent).first()  # requires an agent from POST /api/agent/init
+candidates = discover_new_topics(db)
+accepted = [r.candidate for r in judge_candidates(db, agent.id, candidates) if r.accepted]
+for r in check_memory_batch(db, agent, accepted):
+    print('DUPLICATE' if r.is_duplicate else 'NEW', '-', r.candidate.title, '-', r.reason)
+"
+```
+
+Needs a real `BREETH_API_KEY` in `backend/.env` to actually call
+Breeth's semantic search — without one, `BreethClient.search()` raises
+and every candidate falls through to the local mirror fallback (see
+"Known Constraints" in `PROJECT_STATUS.md`), which the script above
+will still run and print correctly; Layer 1's `posts.fingerprint`
+check needs no API key at all.
+
+## Verifying the Post Writer (Stage 16)
+
+```bash
+cd backend
+python -m scripts.test_post_writer
+```
+
+Runs with a scripted fake `LLMProvider` (no network/API key needed).
+Confirms: a well-formed `TITLE:`/`RATIONALE:`/`CONTENT:` response
+parses into a `WrittenPost`, with `sources` set to `[candidate.url]`
+and the originating `JudgmentResult`'s fingerprint (Stage 14) carried
+through unchanged; a response missing any required marker raises
+`PostWriteError`; sections out of order raise `PostWriteError`; an
+empty section (e.g. `CONTENT:` with nothing after it) raises
+`PostWriteError`; a provider exception during generation raises
+`PostWriteError` without leaking the raw exception type; calling
+`write_post()` with a *rejected* `JudgmentResult` raises immediately
+without ever calling the provider; and an empty response string raises
+`PostWriteError`. Not wired into any route or scheduler yet — Stage 18
+will chain it in: `discover_new_topics()` (Stage 12) →
+`judge_candidates()` (Stage 14, accepted only) → `check_memory_batch()`
+(Stage 15, not-duplicate only) → `write_post()` (this stage, one call
+per surviving candidate) → publish (Stage 17):
+
+```bash
+cd backend
+python -c "
+from app.core.database import SessionLocal, init_db
+from app.models.agent import Agent
+from app.services.sources_cache_service import discover_new_topics
+from app.services.editorial_judgment import judge_candidates
+from app.services.memory_service import check_memory_batch
+from app.services.post_writer import write_post, PostWriteError
+init_db()
+db = SessionLocal()
+agent = db.query(Agent).first()  # requires an agent from POST /api/agent/init
+candidates = discover_new_topics(db)
+judgments = [r for r in judge_candidates(db, agent.id, candidates) if r.accepted]
+survivors = [j for j, m in zip(judgments, check_memory_batch(db, agent, [j.candidate for j in judgments])) if not m.is_duplicate]
+for j in survivors:
+    try:
+        post = write_post(j)
+        print('WROTE:', post.title)
+    except PostWriteError as exc:
+        print('FAILED:', exc)
+"
+```
+
+Needs a real `GEMINI_API_KEY` (or `LLM_PROVIDER=openrouter` +
+`OPENROUTER_API_KEY`) in `backend/.env` to actually generate post
+content — without one, `generate()` raises and `write_post()` raises
+`PostWriteError` for every candidate (see "Known Constraints" in
+`PROJECT_STATUS.md`), which the script above will still run and print
+correctly.
+
+## Verifying the Publisher (Stage 17)
+
+```bash
+cd backend
+python -m scripts.test_publisher
+```
+
+Runs against an in-memory DB with a fake `BreethClient` (no
+network/API key needed). Confirms: `publish_post()` persists a `Post`
+row with the right title/content/rationale/JSON-encoded
+sources/fingerprint and returns it committed with a generated id; a
+successful Breeth write creates a `synced=True` `breeth_mirror_facts`
+row whose `object` is the post's title (so a future Stage 15 semantic
+check has real title text to compare against); a Breeth write that
+raises still persists the `Post` and records a `synced=False` mirror
+fact instead of blocking publishing (same best-effort posture Stage
+10's namespace creation already established); an agent with no
+`breeth_agent_ref` yet skips the remote call entirely (zero calls
+made) but still persists the `Post` and writes a local mirror fact
+with `group_id="unassigned"`; publishing two distinct posts for the
+same agent creates two independent `Post`/mirror-fact rows with no
+accidental dedup at this layer (that's Stages 14/15's job); and a
+persisted post's fingerprint round-trips correctly for a future
+lookup. Not wired into any route or scheduler yet — Stage 18 will
+chain it in as the final step:
+`discover_new_topics()` (Stage 12) → `judge_candidates()` (Stage 14,
+accepted only) → `check_memory_batch()` (Stage 15, not-duplicate only)
+→ `write_post()` (Stage 16) → `publish_post()` (this stage):
+
+```bash
+cd backend
+python -c "
+from app.core.database import SessionLocal, init_db
+from app.models.agent import Agent
+from app.services.sources_cache_service import discover_new_topics
+from app.services.editorial_judgment import judge_candidates
+from app.services.memory_service import check_memory_batch
+from app.services.post_writer import write_post, PostWriteError
+from app.services.publisher import publish_post
+init_db()
+db = SessionLocal()
+agent = db.query(Agent).first()  # requires an agent from POST /api/agent/init
+candidates = discover_new_topics(db)
+judgments = [r for r in judge_candidates(db, agent.id, candidates) if r.accepted]
+survivors = [j for j, m in zip(judgments, check_memory_batch(db, agent, [j.candidate for j in judgments])) if not m.is_duplicate]
+for j in survivors:
+    try:
+        post = publish_post(db, agent, write_post(j))
+        print('PUBLISHED:', post.title)
+    except PostWriteError as exc:
+        print('SKIPPED:', exc)
+"
+```
+
+Needs a real `BREETH_API_KEY` in `backend/.env` to actually push the
+published-fact to Breeth — without one, `BreethClient.write_fact()`
+raises and the fact only lands in the local `breeth_mirror_facts`
+mirror (`synced=False`), same "Known Constraints" caveat as every
+Breeth call so far; the `Post` row itself is unaffected either way.
 
 ## Required Environment Variables
 

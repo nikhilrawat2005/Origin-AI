@@ -491,3 +491,111 @@ wired into any route or scheduler yet.
 - `README.md`
 **Commit:** `feat(backend): add editorial judgment with fail-closed LLM accept/reject and rejected_topics logging`
 **Prompt File:** `docs/prompts/15_stage14.md`
+
+---
+
+### Stage 15
+**Date:** 2026-08-08
+**AI Tool Used:** Claude (Sonnet 5)
+**Objective:** Memory Service (Breeth Dedup)
+**Summary:** Added `app/services/memory_service.py`. `check_memory()`
+checks an editorially-accepted candidate against two dedup layers
+before it can reach Stage 16's post writer. Layer 1 is a local,
+authoritative, network-free exact match against `posts.fingerprint`
+(Stage 13's algorithm, already stamped on every `Post` per its Stage 2
+docstring) — catches an exact reworded/reordered-title repeat of
+something this agent already published. Layer 2 is a soft semantic
+check via `BreethClient.search()` (Stage 9) scoped to the agent's own
+namespace (`agent.breeth_agent_ref`, Stage 10): a fuzzy keyword-overlap
+scan (`SEMANTIC_OVERLAP_THRESHOLD = 0.6`) over whatever `edges` Breeth
+returns, catching the case fingerprinting structurally can't — the
+same story covered from a different source/title that doesn't collapse
+to the same fingerprint. Deliberately fails **open** on Breeth
+specifically (unlike Stage 14's fail-closed LLM judgment): per
+PROJECT_STATUS.md's "Known Constraints," there's no real
+`BREETH_API_KEY` in this sandboxed environment, so a missing key or
+outage must never block an otherwise-novel, already-accepted topic.
+On a Breeth failure, falls back to a best-effort local keyword scan
+over `breeth_mirror_facts` (Stage 10's local mirror table — its own
+docstring reserved exactly this fallback for this stage); if that's
+also empty (expected until Stage 17's publisher starts writing
+post-published facts there), the candidate passes through as novel.
+`check_memory_batch()` batches `check_memory()` over a list, reusing
+one `BreethClient`. Not wired into any route or scheduler yet.
+**Files Changed:**
+- `backend/app/services/memory_service.py`
+- `backend/scripts/test_memory_service.py`
+- `README.md`
+**Commit:** `feat(backend): add memory service with local fingerprint + Breeth semantic dedup against published topics, failing open on Breeth`
+**Prompt File:** `docs/prompts/16_stage15.md`
+
+---
+
+### Stage 16
+**Date:** 2026-08-08
+**AI Tool Used:** Claude (Sonnet 5)
+**Objective:** Post Writer
+**Summary:** Added `app/services/post_writer.py`. `write_post()` takes
+a whole accepted `JudgmentResult` (Stage 14) — not just the candidate
+— so the original editorial acceptance reason grounds the generated
+rationale, and so the function can assert loudly (`PostWriteError`) if
+ever mistakenly called with a rejected result, without touching the
+LLM. Builds a prompt from the candidate's concrete fields plus that
+acceptance reason, seeds `LLMProvider.generate()` (Stage 6/7) with the
+persona's full voice profile (Stage 5) as the system prompt exactly as
+Stage 14's judgment call does, and requires a strict
+`TITLE:`/`RATIONALE:`/`CONTENT:` response format. `_parse_post_response()`
+insists on all three markers present, in the correct order, each with
+non-empty content — any deviation raises `PostWriteError` rather than
+guessing or shipping partial content. Unlike Stage 14 (fails closed to
+REJECT, a safe default verdict) and Stage 15 (fails open on Breeth,
+since an outage isn't evidence of duplication), this stage fails
+**loud**: there is no safe placeholder post to fall back to, so any
+generation or parsing failure raises rather than silently producing
+something. `sources` is populated with `[candidate.url]` only — source
+aggregation beyond the single URL a candidate carries is out of scope
+here (nothing in the 20-stage plan assigns it to this stage, and no
+earlier stage's `TopicCandidate` carries more than one URL anyway).
+Not wired into any route or scheduler yet.
+**Files Changed:**
+- `backend/app/services/post_writer.py`
+- `backend/scripts/test_post_writer.py`
+- `README.md`
+**Commit:** `feat(backend): add post writer generating title/content/rationale via LLMFactory, failing loud on malformed output`
+**Prompt File:** `docs/prompts/17_stage16.md`
+
+---
+
+### Stage 17
+**Date:** 2026-08-08
+**AI Tool Used:** Claude (Sonnet 5)
+**Objective:** Publisher
+**Summary:** Added `app/services/publisher.py`. `publish_post()`
+persists a Stage 16 `WrittenPost` as a `Post` row (title, content,
+rationale, JSON-encoded sources, fingerprint, agent_id), then calls
+`_push_published_fact()` to tell Breeth about it. Follows exactly the
+best-effort-remote + always-local-mirror pattern
+`agent_service._create_breeth_namespace()` (Stage 10) already
+established: the `Post` row is a plain, unconditional DB write (no
+special fail-open/fail-closed handling — a genuine DB failure here is
+an ordinary unhandled error, same as any other required write in this
+codebase), while the Breeth `write_fact()` call is wrapped in a broad
+try/except and its outcome (`synced`) is recorded on a
+`BreethMirrorFact` row regardless of success — deliberately mirroring
+Stage 10's precedent rather than inventing a new pattern, since Stage
+15's memory service already depends on that mirror table being
+populated for its fallback path to have anything to find. The mirrored
+fact's `object` is the post's own title (not a generic string),
+specifically so Stage 15's keyword-overlap matching has real text to
+compare a future candidate's title against. Skips the remote Breeth
+call entirely (but still writes the local mirror row, with
+`group_id="unassigned"`) when the agent has no `breeth_agent_ref` yet
+— the legitimate case where `/init` ran without a working
+`BREETH_API_KEY` (Stage 10's own documented fallback). Not wired into
+any route or scheduler yet.
+**Files Changed:**
+- `backend/app/services/publisher.py`
+- `backend/scripts/test_publisher.py`
+- `README.md`
+**Commit:** `feat(backend): add publisher persisting posts and pushing best-effort published facts to Breeth`
+**Prompt File:** `docs/prompts/18_stage17.md`
