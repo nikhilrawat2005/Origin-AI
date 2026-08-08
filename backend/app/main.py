@@ -43,9 +43,25 @@ app.add_middleware(
 
 @app.on_event("startup")
 def on_startup():
-    """Create tables if they don't exist yet. Safe to call every boot —
-    create_all() is a no-op for tables that already exist."""
+    """Create tables if they don't exist yet, and resume scheduler if an agent is active."""
     init_db()
+    
+    # Auto-resume scheduler on app boot if an agent already exists
+    try:
+        from app.core.database import SessionLocal
+        from app.models.agent import Agent
+        from app.services.scheduler import start_scheduler
+        
+        db = SessionLocal()
+        try:
+            agent = db.query(Agent).order_by(Agent.created_at.desc()).first()
+            if agent:
+                logging.info(f"on_startup: Resuming scheduler for active agent {agent.id}")
+                start_scheduler(agent.id)
+        finally:
+            db.close()
+    except Exception as exc:
+        logging.warning(f"on_startup: Could not auto-resume scheduler: {exc}")
 
 
 @app.on_event("shutdown")

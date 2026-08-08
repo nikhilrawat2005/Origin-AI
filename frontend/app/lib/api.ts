@@ -47,3 +47,11 @@ export async function getFeed(): Promise<FeedResponse> {
   }
   return res.json();
 }
+
+export async function stopAgent(): Promise<{ status: string; message: string }> {
+  const res = await fetch(`${API_URL}/api/agent/stop`, { method: "POST" });
+  if (!res.ok) {
+    throw new Error(`Stop failed: ${res.status}`);
+  }
+  return res.json();
+}

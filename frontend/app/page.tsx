@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { getFeed, initAgent, type AgentInitResponse } from "./lib/api";
+import { getFeed, initAgent, stopAgent, type AgentInitResponse } from "./lib/api";
 
 type LoadState = "idle" | "loading" | "error";
 
@@ -37,6 +37,17 @@ export default function LandingPage() {
     }
   }
 
+  async function handleStop() {
+    setLoadState("loading");
+    try {
+      await stopAgent();
+      setAgent(null);
+      setLoadState("idle");
+    } catch {
+      setLoadState("error");
+    }
+  }
+
   const isActive = agent !== null;
 
   return (
@@ -56,7 +67,7 @@ export default function LandingPage() {
           Persona
         </p>
         <h2 style={{ margin: "0 0 12px" }}>
-          {agent ? "Initialized" : "Not yet initialized"}
+          {agent ? "Initialized & Active" : "Paused / Not Initialized"}
         </h2>
         <p style={{ color: "var(--muted)", lineHeight: 1.6 }}>
           Once initialized, Aether independently discovers AI/tech topics, applies editorial judgment on what deserves publishing, writes in a consistent voice, remembers what it has already covered, and publishes new posts over time — with no further human prompting.
@@ -77,21 +88,36 @@ export default function LandingPage() {
             Agent Status
           </p>
           <span className="badge">
-            {isActive ? "Active" : "Not Initialized"}
+            {isActive ? "Active (Running)" : "Stopped / Paused"}
           </span>
         </div>
 
-        <button
-          className="primary"
-          disabled={loadState === "loading" || isActive}
-          onClick={handleInitialize}
-        >
-          {isActive
-            ? "Initialized"
-            : loadState === "loading"
-              ? "Initializing…"
-              : "Initialize Agent"}
-        </button>
+        {isActive ? (
+          <button
+            className="secondary"
+            disabled={loadState === "loading"}
+            onClick={handleStop}
+            style={{
+              padding: "8px 16px",
+              cursor: "pointer",
+              backgroundColor: "#ef4444",
+              color: "#fff",
+              border: "none",
+              borderRadius: "6px",
+              fontWeight: 500,
+            }}
+          >
+            {loadState === "loading" ? "Stopping…" : "Stop Agent"}
+          </button>
+        ) : (
+          <button
+            className="primary"
+            disabled={loadState === "loading"}
+            onClick={handleInitialize}
+          >
+            {loadState === "loading" ? "Initializing…" : "Initialize Agent"}
+          </button>
+        )}
       </section>
 
       {loadState === "error" && (

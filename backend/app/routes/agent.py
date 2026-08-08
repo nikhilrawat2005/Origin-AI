@@ -51,6 +51,20 @@ def init_agent(body: AgentInitRequest | None = None, db: Session = Depends(get_d
     return AgentInitResponse(agentId=agent.id)
 
 
+@router.post("/stop")
+def stop_agent(db: Session = Depends(get_db)):
+    """Pause/stop the autonomous background scheduler and flip agent status to paused."""
+    from app.services.scheduler import stop_scheduler
+    stop_scheduler()
+
+    agent = db.query(Agent).order_by(Agent.created_at.desc()).first()
+    if agent:
+        agent.status = "paused"
+        db.commit()
+
+    return {"status": "stopped", "message": "Background publish scheduler paused."}
+
+
 @router.get("/feed", response_model=FeedResponse)
 def get_feed(db: Session = Depends(get_db)):
     """Return every published post, newest first, as `{"posts": [...]}`.
