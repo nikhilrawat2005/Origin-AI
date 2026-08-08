@@ -33,7 +33,10 @@ def run():
     init_db()
     table_names = list(Base.metadata.tables.keys())
     print(f"Tables created: {table_names}")
-    assert set(table_names) == {"agents", "posts", "rejected_topics", "sources_cache"}
+    # Stage 10 adds breeth_mirror_facts alongside the original Stage 2 set.
+    assert set(table_names) == {
+        "agents", "posts", "rejected_topics", "sources_cache", "breeth_mirror_facts",
+    }
 
     db = SessionLocal()
     try:

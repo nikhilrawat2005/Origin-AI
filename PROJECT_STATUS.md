@@ -2,7 +2,7 @@
 
 > **Use this file to resume work if the conversation/context resets.**
 > Paste this whole document into a new chat and say:
-> **"Continue from Stage 5. Last delivered ZIP: aether-stage4.zip"**
+> **"Continue from Stage 11. Last delivered ZIP: aether-stage10.zip"**
 > (update the stage number/zip name to whatever is current at that time)
 
 ---
@@ -116,13 +116,13 @@ starting the next one.** Documentation is never postponed to the end.
 | 2 | Database Models | SQLite + SQLAlchemy: agents, posts, rejected_topics, sources_cache (no routes) ✅ **DONE** |
 | 3 | Frontend Skeleton | Next.js app router boots, empty Landing + Feed pages, no API calls yet ✅ **DONE** |
 | 4 | `/api/agent/init` (basic) | Creates agent row, returns agentId — no persona/LLM logic yet ✅ **DONE** |
-| 5 | Persona Bible + Prompt Builder | persona.json, persona_service.py builds voice profile (no LLM call yet) ⬅ **NEXT UP** |
-| 6 | LLMProvider Interface | base_provider.py (generate/judge/summarize ABC) + Gemini provider |
-| 7 | LLMFactory + Second Provider | llm_factory.py + openrouter_provider.py, env-driven switch |
-| 8 | Wire LLM into Init | /init generates persona voice profile via LLMFactory, saves it |
-| 9 | Breeth Client (connection only) | breeth_client.py — connect, write/read test fact, standalone script |
-| 10 | Breeth Namespace on Init | /init creates Breeth namespace, stores breeth_agent_ref, SQLite mirror stub |
-| 11 | Topic Sources Config + Fetcher | topic_sources.json + topic_discovery.py, raw candidates, no caching yet |
+| 5 | Persona Bible + Prompt Builder | persona.json, persona_service.py builds voice profile (no LLM call yet) ✅ **DONE** |
+| 6 | LLMProvider Interface | base_provider.py (generate/judge/summarize ABC) + Gemini provider ✅ **DONE** |
+| 7 | LLMFactory + Second Provider | llm_factory.py + openrouter_provider.py, env-driven switch ✅ **DONE** |
+| 8 | Wire LLM into Init | /init generates persona voice profile via LLMFactory, saves it ✅ **DONE** |
+| 9 | Breeth Client (connection only) | breeth_client.py — connect, write/read test fact, standalone script ✅ **DONE** |
+| 10 | Breeth Namespace on Init | /init creates Breeth namespace, stores breeth_agent_ref, SQLite mirror stub ✅ **DONE** |
+| 11 | Topic Sources Config + Fetcher | topic_sources.json + topic_discovery.py, raw candidates, no caching yet ⬅ **NEXT UP** |
 | 12 | Sources Cache | sources_cache wired in — dedup fetch, hash check |
 | 13 | Fingerprinting | Normalized title+keywords+source → fingerprint function, unit-testable |
 | 14 | Editorial Judgment | editorial_judgment.py — accept/reject + rejected_topics logging |
@@ -229,23 +229,123 @@ starting the next one.** Documentation is never postponed to the end.
   sandbox, per Known Constraints)
 - Commit: `feat(backend): add LLMProvider interface and Gemini implementation`
 
+### ✅ Stage 7 — LLMFactory + Second Provider (DONE)
+- `backend/app/services/llm/openrouter_provider.py` — `OpenRouterProvider`,
+  calls OpenRouter's OpenAI-compatible `/chat/completions` endpoint via
+  `httpx`, same structure as `GeminiProvider`; raises
+  `OpenRouterConfigError` if `OPENROUTER_API_KEY` is missing
+- `backend/app/services/llm/llm_factory.py` — `get_llm_provider()`,
+  name-to-class registry keyed off `settings.llm_provider`
+  (case-insensitive), raises `UnknownLLMProviderError` for anything
+  unregistered
+- `backend/app/core/config.py` / `.env.example` — added
+  `OPENROUTER_API_KEY`, `OPENROUTER_MODEL` (default
+  `openai/gpt-4o-mini`)
+- Rule from this stage on: nothing outside `app/services/llm/` imports
+  a concrete provider class directly — callers use
+  `get_llm_provider()`, which is what makes the provider swappable per
+  the PRD
+- `backend/scripts/test_llm_factory.py` — standalone verification
+  script; re-ran Stage 6's `test_llm_provider.py`, no regressions
+- Verified: `OpenRouterProvider` implements the full interface,
+  missing-key path raises a clear error, factory resolves to
+  `GeminiProvider` by default and `OpenRouterProvider` when asked,
+  case-insensitive lookup works, unknown provider name raises loudly
+- Commit: `feat(backend): add LLMFactory and OpenRouter provider for env-driven LLM switching`
+
+### ✅ Stage 8 — Wire LLM into Init (DONE)
+- `backend/app/services/agent_service.py` — on agent creation (not on
+  idempotent re-fetch), builds the voice-profile prompt
+  (`persona_service`) and sends it through `get_llm_provider().generate()`
+  to produce a short persona description, stored on the row; wrapped
+  in a broad try/except that logs a warning and returns `None` on any
+  failure so `/init` still succeeds without a live LLM
+- `backend/app/schemas/agent.py`, `backend/app/routes/agent.py` —
+  `AgentInitResponse` gains `personaDescription`
+- `backend/scripts/test_init_llm_wiring.py` — standalone verification
+  against an in-memory DB and a fake `LLMProvider`; re-ran Stages 6/7
+  scripts, no regressions
+- Verified: new agent gets correct `persona_name` + fake provider's
+  description, LLM called exactly once even across a repeat call,
+  real graceful-fallback path (no key in this sandbox) still succeeds
+  with `persona_description=None`
+- Commit: `feat(backend): generate persona description via LLM on agent init`
+
+### ✅ Stage 9 — Breeth Client (connection only) (DONE)
+- Fetched current Breeth docs (docs.thebreeth.com) before coding, per
+  Known Constraint #3: base URL `https://api.thebreeth.com`, all
+  routes under `/v1`, Bearer-token auth, JSON error envelope
+  `{"error": "<slug>", "message": "..."}`
+- `backend/app/services/breeth_client.py` — `BreethClient` with
+  `write_fact()` (`POST /v1/facts`) and `search()` (`POST /v1/search`,
+  hybrid BM25 + vector + graph retrieval); raises `BreethConfigError`
+  if `BREETH_API_KEY` is unset, `BreethAPIError` (with parsed
+  `slug`/`message`) on any non-2xx response
+- `backend/app/core/config.py` / `.env.example` — added
+  `BREETH_BASE_URL` (default `https://api.thebreeth.com`)
+- No namespace-per-agent logic and no wiring into `/init` yet — that's
+  Stage 10
+- `backend/scripts/test_breeth_client.py` — standalone verification;
+  confirms missing-key path raises `BreethConfigError`, conditionally
+  runs a live write/search round-trip only if a real key is present
+  (skipped here); re-ran Stages 6/7/8 scripts, no regressions
+- Commit: `feat(backend): add Breeth client for facts/search with connection verification`
+
+### ✅ Stage 10 — Breeth Namespace on Init (DONE)
+- `backend/app/models/breeth_mirror.py` — `BreethMirrorFact`, a local
+  SQLite mirror of facts Aether attempts to write into Breeth (stub
+  for Stage 15's `memory_service` to build a local fallback on if a
+  live Breeth query ever fails)
+- `backend/app/services/agent_service.py` — `_breeth_group_id()` /
+  `_create_breeth_namespace()`: on agent creation, derives a
+  deterministic `group_id` (`agent-<agent_id>`) — this *is* the
+  namespace, since Breeth scopes by `group_id` rather than exposing a
+  separate namespace-creation call — best-effort writes an identity
+  fact into it via `BreethClient`, and always records the attempt as a
+  `BreethMirrorFact` row (`synced=True/False`) regardless of whether
+  the remote write actually succeeded
+- `agent.breeth_agent_ref` now populated on creation (was `None`
+  through Stage 9); always set, since the group_id is locally derived
+  rather than something Breeth returns
+- `backend/app/schemas/agent.py`, `backend/app/routes/agent.py` —
+  `AgentInitResponse` gains `breethAgentRef`
+- `backend/app/models/__init__.py` — registered `BreethMirrorFact` so
+  `create_all()` picks up the new `breeth_mirror_facts` table
+- `backend/scripts/test_breeth_namespace.py` — standalone
+  verification script (in-memory DB): confirms `breeth_agent_ref` is
+  set and matches the deterministic group_id, exactly one
+  `BreethMirrorFact` row is written with `synced=False` (no real
+  `BREETH_API_KEY` in this sandbox), and a repeat `/init` call does
+  not create a duplicate namespace/mirror row
+- `backend/scripts/test_models.py` — updated its exact-table-set
+  assertion to include the new `breeth_mirror_facts` table (this was
+  the one regression the new table caused; fixed and re-verified)
+- Verified: full server boot via FastAPI `TestClient` (startup event
+  triggers `init_db()`), `POST /api/agent/init` called twice —
+  `breethAgentRef` present and equal to `f"agent-{agentId}"` on both
+  calls, second call created no duplicate rows; re-ran all Stage
+  2/5/6/7/8/9 verification scripts end-to-end, no regressions
+- Commit: `feat(backend): create per-agent Breeth namespace on init with local mirror`
+
 ## 14. Last Delivered File
 
-**`aether-stage6.zip`** — cumulative project ZIP containing everything
-through Stage 6 (backend skeleton + all DB models + Next.js frontend
-skeleton + `POST /api/agent/init` + persona bible/prompt builder +
-LLMProvider interface/Gemini provider + docs for stages 0/1/2/3/4/5/6).
+**`aether-stage10.zip`** — cumulative project ZIP containing everything
+through Stage 10 (backend + frontend skeletons, all DB models incl.
+the new Breeth mirror table, `/init` fully wired with
+persona/LLM/Breeth-namespace logic, persona bible, LLM provider
+abstraction with two providers, Breeth client, and docs for stages
+0–10).
 
 ## 15. How To Resume
 
 Paste this document into a new conversation and say:
 
-> "Continue from Stage 7. Last delivered ZIP: aether-stage6.zip"
+> "Continue from Stage 11. Last delivered ZIP: aether-stage10.zip"
 
 Claude should then:
 1. Re-read this doc to restore full context (scope, stack, rules, plan)
-2. Start Stage 7 exactly as planned: `llm_factory.py` (env-driven
-   switch on `LLM_PROVIDER`) plus `openrouter_provider.py` as a second
-   concrete `LLMProvider`
+2. Start Stage 11 exactly as planned: `topic_sources.json` (source
+   list/config) + `topic_discovery.py` (fetches raw topic candidates
+   from those sources) — no caching/dedup yet, that's Stage 12
 3. Continue following Rule 13 (docs + log + commit + ZIP + stop for
    approval) for every stage from there on

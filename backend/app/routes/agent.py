@@ -18,10 +18,10 @@ router = APIRouter(prefix="/api/agent", tags=["agent"])
 def init_agent(db: Session = Depends(get_db)):
     """Create the agent row (or return the existing one) and its id.
 
-    Stage 8: on first call, this now generates the persona description
-    via the LLM (persona_service + llm_factory) as part of creation. No
-    Breeth namespace, no scheduler start — those land in Stages 10 and
-    18 and will update the same row returned here.
+    Stage 8 wired in LLM-generated persona descriptions on first call.
+    Stage 10 adds Breeth namespace creation on first call too
+    (agent_service._create_breeth_namespace). No scheduler start yet —
+    that's Stage 18, and will update the same row returned here.
     """
     agent = get_or_create_agent(db)
     return AgentInitResponse(
@@ -29,5 +29,6 @@ def init_agent(db: Session = Depends(get_db)):
         status=agent.status,
         personaName=agent.persona_name,
         personaDescription=agent.persona_description,
+        breethAgentRef=agent.breeth_agent_ref,
         createdAt=agent.created_at,
     )

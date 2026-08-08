@@ -7,5 +7,6 @@ from app.models.agent import Agent
 from app.models.post import Post
 from app.models.rejected_topic import RejectedTopic
 from app.models.sources_cache import SourceCache
+from app.models.breeth_mirror import BreethMirrorFact
 
-__all__ = ["Agent", "Post", "RejectedTopic", "SourceCache"]
+__all__ = ["Agent", "Post", "RejectedTopic", "SourceCache", "BreethMirrorFact"]

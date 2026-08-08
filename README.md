@@ -10,7 +10,7 @@ This is **not** a chatbot and **not** a generic content generator.
 
 ## Project Status
 
-🚧 **Stage 9 of 20 — Breeth Client (connection only)**
+🚧 **Stage 10 of 20 — Breeth Namespace on Init**
 
 See `docs/AI_USAGE_LOG.md` for full development history and
 `docs/prompts/` for the prompt/decision log of every stage.
@@ -41,7 +41,7 @@ aether/
 │   │   ├── routes/
 │   │   │   └── agent.py     # POST /api/agent/init
 │   │   ├── services/
-│   │   │   ├── agent_service.py    # get_or_create_agent — creates agent, generates persona_description via LLM
+│   │   │   ├── agent_service.py    # get_or_create_agent — creates agent, generates persona_description via LLM, creates Breeth namespace
 │   │   │   ├── persona_service.py  # loads persona.json, builds voice-profile prompt
 │   │   │   ├── breeth_client.py    # BreethClient — write_fact/search over Breeth's REST API
 │   │   │   └── llm/
@@ -50,15 +50,16 @@ aether/
 │   │   │       ├── openrouter_provider.py  # OpenRouterProvider — REST calls via httpx
 │   │   │       └── llm_factory.py          # get_llm_provider() — env-driven switch
 │   │   ├── schemas/
-│   │   │   └── agent.py     # AgentInitResponse (incl. personaDescription)
-│   │   └── models/          # agents, posts, rejected_topics, sources_cache
+│   │   │   └── agent.py     # AgentInitResponse (incl. personaDescription, breethAgentRef)
+│   │   └── models/          # agents, posts, rejected_topics, sources_cache, breeth_mirror_facts
 │   ├── scripts/
 │   │   ├── test_models.py             # standalone DB model verification script
 │   │   ├── test_persona.py            # standalone persona/prompt-builder verification script
 │   │   ├── test_llm_provider.py       # standalone LLMProvider/Gemini verification script
 │   │   ├── test_llm_factory.py        # standalone LLMFactory/OpenRouter verification script
 │   │   ├── test_init_llm_wiring.py    # standalone /init + LLM-generation verification script
-│   │   └── test_breeth_client.py      # standalone Breeth connection verification script
+│   │   ├── test_breeth_client.py      # standalone Breeth connection verification script
+│   │   └── test_breeth_namespace.py   # standalone Breeth namespace-on-init verification script
 │   ├── requirements.txt
 │   └── .env.example
 ├── frontend/
@@ -264,6 +265,34 @@ the live round-trip is skipped with an explicit message, same pattern
 as Stages 6/7's provider smoke tests. Connection only — no
 namespace-per-agent logic yet (that's Stage 10) and no dedup/memory
 queries against the pipeline (Stage 15+).
+
+## Verifying Breeth Namespace on Init (Stage 10)
+
+```bash
+cd backend
+python -m scripts.test_breeth_namespace
+```
+
+Against an in-memory DB, this confirms: a new agent's
+`breeth_agent_ref` is set to the deterministic `f"agent-{agentId}"`
+namespace even with no real `BREETH_API_KEY` configured; exactly one
+`BreethMirrorFact` row is written recording the attempt
+(`synced=False` in this sandbox, since the remote write can't
+actually succeed without a key); and a repeat `get_or_create_agent()`
+call doesn't create a duplicate mirror row. You can also boot the
+server and call the real route twice to see it end-to-end:
+
+```bash
+cd backend
+uvicorn app.main:app --reload
+# in another terminal:
+curl -X POST http://localhost:8000/api/agent/init
+curl -X POST http://localhost:8000/api/agent/init   # same agentId + breethAgentRef back
+```
+
+`breethAgentRef` will be `"agent-<agentId>"` on both calls. With a
+real `BREETH_API_KEY` set, the underlying `write_fact` call actually
+reaches Breeth and the mirrored row's `synced` flips to `True`.
 
 ## Required Environment Variables
 

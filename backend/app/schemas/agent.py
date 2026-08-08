@@ -1,11 +1,14 @@
 """
 Response schema(s) for the agent endpoints.
 
-Stage 8: adds `personaDescription` now that `/init` actually generates
-one via the LLM (falls back to None if generation was skipped/failed —
-see agent_service._generate_persona_description). Schema will keep
-growing as later stages (Breeth ref, scheduler status) add fields
-rather than being redefined.
+Stage 8 added `personaDescription` once `/init` started generating one
+via the LLM. Stage 10 adds `breethAgentRef` now that `/init` also
+establishes the agent's Breeth namespace (agent_service.
+_create_breeth_namespace) — always populated on creation, since the
+group_id is locally derived rather than something Breeth returns (see
+that function's docstring for why it's set even when the underlying
+remote write fails). Schema will keep growing as later stages
+(scheduler status) add fields rather than being redefined.
 """
 from datetime import datetime
 
@@ -19,4 +22,5 @@ class AgentInitResponse(BaseModel):
     status: str
     personaName: str
     personaDescription: str | None = None
+    breethAgentRef: str | None = None
     createdAt: datetime

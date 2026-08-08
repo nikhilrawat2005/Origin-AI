@@ -305,3 +305,46 @@ regressions.
 - `README.md`
 **Commit:** `feat(backend): add Breeth client for facts/search with connection verification`
 **Prompt File:** `docs/prompts/10_stage9.md`
+
+---
+
+### Stage 10
+**Date:** 2026-08-08
+**AI Tool Used:** Claude (Sonnet 5)
+**Objective:** Breeth Namespace on Init
+**Summary:** Wired Stage 9's `BreethClient` into `POST /api/agent/init`.
+`agent_service._breeth_group_id()` derives a deterministic `group_id`
+(`agent-<agent_id>`) per agent — this doubles as the "namespace" since
+Breeth scopes facts/search by `group_id` rather than exposing a
+separate namespace-creation endpoint. `_create_breeth_namespace()`
+best-effort writes an identity fact (`<persona_name> is_a autonomous
+AI technology research persona`) into that group on agent creation
+only, wrapped in the same broad try/except pattern as Stage 8's LLM
+call — no real `BREETH_API_KEY` is available in this sandboxed
+environment, and `/init` must still succeed without a live Breeth
+call. Added `app/models/breeth_mirror.py` (`BreethMirrorFact`) as a
+local SQLite mirror: every namespace-creation attempt writes a row
+here recording `group_id`/`subject`/`predicate`/`object` and whether
+the remote write actually `synced`, regardless of outcome — this
+exists now as a stub so Stage 15's `memory_service` has a local
+fallback to query if a live Breeth call fails later, rather than
+introducing the table under time pressure then. `agent.breeth_agent_ref`
+is always set to the computed `group_id` (unlike the LLM-generated
+persona description, which is `None` on failure) since it's a locally
+derived identifier, not something Breeth returns — valid to store and
+retry against even when today's write fails. `AgentInitResponse`
+gained `breethAgentRef`. Adding the new table required updating Stage
+2's `test_models.py`, which asserted an exact table set — the one
+regression this stage caused, caught by re-running it and fixed before
+considering the stage done.
+**Files Changed:**
+- `backend/app/models/breeth_mirror.py`
+- `backend/app/models/__init__.py`
+- `backend/app/services/agent_service.py`
+- `backend/app/schemas/agent.py`
+- `backend/app/routes/agent.py`
+- `backend/scripts/test_breeth_namespace.py`
+- `backend/scripts/test_models.py`
+- `PROJECT_STATUS.md`
+**Commit:** `feat(backend): create per-agent Breeth namespace on init with local mirror`
+**Prompt File:** `docs/prompts/11_stage10.md`
