@@ -4,6 +4,7 @@ Aether Backend - FastAPI Application Entrypoint
 Stage 4: wires up the database (init_db) and the first real route,
 POST /api/agent/init, on top of the Stage 1 skeleton.
 """
+import logging
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -11,6 +12,12 @@ from app.core.config import get_settings
 from app.core.database import init_db
 from app.routes import agent as agent_routes
 from app.services.scheduler import stop_scheduler
+
+# Configure standard logging to output INFO level logs to stdout (for Railway)
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+)
 
 # Import models package so every model is registered on Base.metadata
 # before init_db() creates tables (see app/models/__init__.py).

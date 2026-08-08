@@ -87,23 +87,21 @@ def _build_judgment_prompt(candidate: TopicCandidate) -> str:
 
 def _parse_judgment(raw: str) -> tuple[bool, str]:
     """Parse an LLMProvider.judge() response into (accepted, reason).
-
-    Deliberately strict about the ACCEPT case (must start with the
-    exact prefix) and lenient about everything else (missing prefix,
-    empty response, garbage text) — all of those fail closed to
-    REJECT, per this module's fail-closed policy.
+    Cleanly strips markdown (like **ACCEPT**) if present.
     """
     if not raw:
         return False, "Editorial judgment returned an empty response."
 
     text = raw.strip()
+    # Strip markdown bolding if present
+    clean_text = text.replace("**", "").strip()
 
-    if text.upper().startswith(_ACCEPT_PREFIX):
-        reason = text[len(_ACCEPT_PREFIX):].lstrip(":").strip()
+    if clean_text.upper().startswith(_ACCEPT_PREFIX):
+        reason = clean_text[len(_ACCEPT_PREFIX):].lstrip(":").strip()
         return True, reason or "Accepted (no rationale given)."
 
-    if text.upper().startswith(_REJECT_PREFIX):
-        reason = text[len(_REJECT_PREFIX):].lstrip(":").strip()
+    if clean_text.upper().startswith(_REJECT_PREFIX):
+        reason = clean_text[len(_REJECT_PREFIX):].lstrip(":").strip()
         return False, reason or "Rejected (no rationale given)."
 
     return False, f"Unparseable judgment response, rejected by default: {text[:200]!r}"
@@ -161,6 +159,7 @@ def judge_candidate(
         accepted, reason = _parse_judgment(raw)
 
     if not accepted:
+        logger.info("judge_candidate: REJECTED %r - %s", candidate.title, reason)
         db.add(
             RejectedTopic(
                 agent_id=agent_id,
@@ -171,6 +170,8 @@ def judge_candidate(
             )
         )
         db.commit()
+    else:
+        logger.info("judge_candidate: ACCEPTED %r - %s", candidate.title, reason)
 
     return JudgmentResult(
         candidate=candidate, fingerprint=fingerprint, accepted=accepted, reason=reason
