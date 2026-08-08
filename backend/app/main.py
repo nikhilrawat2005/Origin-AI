@@ -1,12 +1,19 @@
 """
 Aether Backend - FastAPI Application Entrypoint
 
-Stage 1: Skeleton only. No agent logic yet.
+Stage 4: wires up the database (init_db) and the first real route,
+POST /api/agent/init, on top of the Stage 1 skeleton.
 """
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.core.config import get_settings
+from app.core.database import init_db
+from app.routes import agent as agent_routes
+
+# Import models package so every model is registered on Base.metadata
+# before init_db() creates tables (see app/models/__init__.py).
+import app.models  # noqa: F401
 
 settings = get_settings()
 
@@ -24,6 +31,16 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+@app.on_event("startup")
+def on_startup():
+    """Create tables if they don't exist yet. Safe to call every boot —
+    create_all() is a no-op for tables that already exist."""
+    init_db()
+
+
+app.include_router(agent_routes.router)
 
 
 @app.get("/api/health")

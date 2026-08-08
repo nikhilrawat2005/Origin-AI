@@ -10,7 +10,7 @@ This is **not** a chatbot and **not** a generic content generator.
 
 ## Project Status
 
-🚧 **Stage 2 of 20 — Database Models**
+🚧 **Stage 4 of 20 — `POST /api/agent/init` (basic)**
 
 See `docs/AI_USAGE_LOG.md` for full development history and
 `docs/prompts/` for the prompt/decision log of every stage.
@@ -38,14 +38,27 @@ aether/
 │   │   │   └── config.py    # env-driven settings (single source of truth)
 │   │   ├── core/
 │   │   │   └── database.py  # SQLAlchemy engine/session, init_db()
-│   │   ├── routes/          # API routes (empty until Stage 4+)
-│   │   ├── services/        # business logic (empty until Stage 5+)
+│   │   ├── routes/
+│   │   │   └── agent.py     # POST /api/agent/init
+│   │   ├── services/
+│   │   │   └── agent_service.py  # get_or_create_agent (single-agent logic)
+│   │   ├── schemas/
+│   │   │   └── agent.py     # AgentInitResponse
 │   │   └── models/          # agents, posts, rejected_topics, sources_cache
 │   ├── scripts/
 │   │   └── test_models.py   # standalone DB model verification script
 │   ├── requirements.txt
 │   └── .env.example
-├── frontend/                 # Next.js app (Stage 3+)
+├── frontend/
+│   ├── app/
+│   │   ├── layout.tsx        # root layout + metadata
+│   │   ├── globals.css       # hand-written dark theme, no UI framework
+│   │   ├── page.tsx          # Landing page (static skeleton)
+│   │   └── feed/
+│   │       └── page.tsx      # Feed page (static skeleton)
+│   ├── package.json
+│   ├── tsconfig.json
+│   └── next.config.js
 └── docs/
     ├── AI_USAGE_LOG.md        # master stage index
     └── prompts/               # one file per stage
@@ -78,9 +91,57 @@ This creates all four tables against a throwaway SQLite file, inserts
 one row per table, reads it back, and asserts the round trip — no API
 layer required.
 
-## Running the Frontend
+## Running the Frontend (Stage 3)
 
-Not yet implemented — arrives in Stage 3.
+```bash
+cd frontend
+npm install
+npm run dev
+```
+
+Then open `http://localhost:3000` (Landing) and
+`http://localhost:3000/feed` (Feed). Both pages are static skeletons —
+no backend calls are made yet. The Initialize button on Landing is
+intentionally disabled until Stage 4 wires it to
+`POST /api/agent/init`.
+
+To verify the production build compiles:
+
+```bash
+cd frontend
+npm install
+npx next build
+```
+
+## Verifying `POST /api/agent/init` (Stage 4)
+
+```bash
+cd backend
+cp .env.example .env   # if you haven't already
+pip install -r requirements.txt
+uvicorn app.main:app --reload --port 8000
+```
+
+Then, in another terminal:
+
+```bash
+curl -X POST http://localhost:8000/api/agent/init
+# {"agentId":"<uuid>","status":"initializing","personaName":"Aether","createdAt":"..."}
+```
+
+Tables are created automatically on startup (`init_db()` runs in a
+FastAPI `startup` event — no separate migration step needed for
+SQLite). Calling `/api/agent/init` again returns the **same**
+`agentId` instead of creating a second row — this matches the PRD's
+"evaluator calls init exactly once" contract while still letting you
+hit the endpoint repeatedly in local dev without side effects. No
+persona generation, no LLM call, no Breeth namespace yet — the row
+created here just has the model's defaults (`persona_name="Aether"`,
+`status="initializing"`); those get filled in starting Stage 5.
+
+The frontend's Initialize button remains disabled — it isn't wired to
+this endpoint yet; that's a later frontend stage once init actually
+does something worth showing.
 
 ## Required Environment Variables
 

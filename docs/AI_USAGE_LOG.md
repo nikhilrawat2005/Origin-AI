@@ -49,3 +49,64 @@ row per table against a throwaway SQLite file.
 - `backend/scripts/__init__.py`
 **Commit:** `feat(backend): add SQLAlchemy models for agents, posts, rejected_topics, sources_cache`
 **Prompt File:** `docs/prompts/03_stage2.md`
+
+---
+
+### Stage 3
+**Date:** 2026-08-07
+**AI Tool Used:** Claude (Sonnet 5)
+**Objective:** Frontend Skeleton
+**Summary:** Bootstrapped the Next.js 14 (App Router) frontend with
+exactly the two pages the PRD allows — Landing (`/`) and Feed
+(`/feed`) — as static skeletons with no API calls yet. Landing shows
+project name, persona placeholder, description, a static "Not
+Initialized" status badge, and a disabled Initialize button (wired to
+`POST /api/agent/init` in Stage 4). Feed shows a static empty state
+(wired to `GET /api/agent/feed` in Stage 19). Used plain CSS (no UI
+framework) to keep the dependency footprint minimal per PRD scope.
+Pinned `next` to `14.2.35` (latest patched 14.2.x) instead of the
+originally-planned `14.2.5`, which has a known security advisory.
+Verified with `npm install` + `npx next build`: both routes compile
+and prerender as static content with no errors; `node_modules` and
+`.next` removed before packaging.
+**Files Changed:**
+- `frontend/package.json`
+- `frontend/tsconfig.json`
+- `frontend/next.config.js`
+- `frontend/.gitignore`
+- `frontend/app/layout.tsx`
+- `frontend/app/globals.css`
+- `frontend/app/page.tsx`
+- `frontend/app/feed/page.tsx`
+- `README.md`
+**Commit:** `feat(frontend): bootstrap Next.js app router skeleton with Landing and Feed pages`
+**Prompt File:** `docs/prompts/04_stage3.md`
+
+---
+
+### Stage 4
+**Date:** 2026-08-07
+**AI Tool Used:** Claude (Sonnet 5)
+**Objective:** `POST /api/agent/init` (basic)
+**Summary:** Wired the first real backend route. `app/routes/agent.py`
+exposes `POST /api/agent/init`; `app/services/agent_service.py` holds
+the logic (`get_or_create_agent`) — creates an `Agent` row on first
+call, returns the existing row unchanged on any later call, so the
+endpoint is idempotent and matches the PRD's "evaluator calls init
+exactly once" contract without blocking repeated local-dev testing.
+`app/schemas/agent.py` adds `AgentInitResponse`. `main.py` now calls
+`init_db()` on FastAPI startup and includes the agent router. No
+persona/LLM/Breeth logic yet — the created row just carries the
+`Agent` model's defaults (`persona_name="Aether"`,
+`status="initializing"`). Verified end-to-end: booted the server,
+called `/api/agent/init` twice, confirmed identical `agentId` in both
+responses and exactly one row in `agents` via direct sqlite3 query.
+**Files Changed:**
+- `backend/app/routes/agent.py`
+- `backend/app/services/agent_service.py`
+- `backend/app/schemas/__init__.py`
+- `backend/app/schemas/agent.py`
+- `backend/app/main.py`
+- `README.md`
+**Commit:** `feat(backend): add POST /api/agent/init with idempotent agent creation`
+**Prompt File:** `docs/prompts/05_stage4.md`
