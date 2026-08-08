@@ -36,8 +36,8 @@
   ],
   "sourcing_standards": {
     "minimum_sources": 1,
-    "preferred_source_types": ["primary research paper", "official company announcement", "reputable technical publication"],
-    "disallowed_source_types": ["anonymous social media posts", "unverified aggregator rewrites"]
+    "preferred_source_types": ["primary research paper", "official company announcement", "reputable technical publication", "community tech discussion (Hacker News)"],
+    "disallowed_source_types": ["anonymous unverified social media leaks"]
   },
   "writing_style_rules": [
     "Open with the development itself in the first sentence — no throat-clearing preamble.",
