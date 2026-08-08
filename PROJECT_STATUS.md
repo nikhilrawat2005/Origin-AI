@@ -210,24 +210,42 @@ starting the next one.** Documentation is never postponed to the end.
   voice line
 - Commit: `feat(backend): add persona bible and voice-profile prompt builder`
 
+### ✅ Stage 6 — LLMProvider Interface (DONE)
+- `backend/app/services/llm/base_provider.py` — `LLMProvider` ABC:
+  `name` property + `generate`/`judge`/`summarize` methods
+- `backend/app/services/llm/gemini_provider.py` — `GeminiProvider`,
+  calls the Gemini REST `generateContent` endpoint via `httpx`; raises
+  `GeminiConfigError` with an actionable message if `GEMINI_API_KEY`
+  is missing
+- `backend/app/core/config.py` / `.env.example` — added `GEMINI_MODEL`
+  (default `gemini-2.5-flash`)
+- `backend/scripts/test_llm_provider.py` — standalone verification
+  script
+- No factory yet, not wired into `/init` yet — that's Stage 7 (second
+  provider + `llm_factory.py`) and Stage 8 (wiring) respectively
+- Verified: ABC rejects direct instantiation, `GeminiProvider`
+  implements the full interface, missing-key path raises a clear
+  error; live API call correctly skipped (no real key in this
+  sandbox, per Known Constraints)
+- Commit: `feat(backend): add LLMProvider interface and Gemini implementation`
+
 ## 14. Last Delivered File
 
-**`aether-stage5.zip`** — cumulative project ZIP containing everything
-through Stage 5 (backend skeleton + all DB models + Next.js frontend
+**`aether-stage6.zip`** — cumulative project ZIP containing everything
+through Stage 6 (backend skeleton + all DB models + Next.js frontend
 skeleton + `POST /api/agent/init` + persona bible/prompt builder +
-docs for stages 0/1/2/3/4/5).
+LLMProvider interface/Gemini provider + docs for stages 0/1/2/3/4/5/6).
 
 ## 15. How To Resume
 
 Paste this document into a new conversation and say:
 
-> "Continue from Stage 6. Last delivered ZIP: aether-stage5.zip"
+> "Continue from Stage 7. Last delivered ZIP: aether-stage6.zip"
 
 Claude should then:
 1. Re-read this doc to restore full context (scope, stack, rules, plan)
-2. Start Stage 6 exactly as planned: `base_provider.py` — an ABC with
-   `generate`/`judge`/`summarize` — plus a first concrete
-   `gemini_provider.py` implementation; still no wiring into `/init`
-   (that's Stage 8)
+2. Start Stage 7 exactly as planned: `llm_factory.py` (env-driven
+   switch on `LLM_PROVIDER`) plus `openrouter_provider.py` as a second
+   concrete `LLMProvider`
 3. Continue following Rule 13 (docs + log + commit + ZIP + stop for
    approval) for every stage from there on

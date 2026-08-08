@@ -19,6 +19,7 @@ class Settings(BaseSettings):
 
     # --- LLM Provider(s) ---
     gemini_api_key: str = ""
+    gemini_model: str = "gemini-2.5-flash"
     llm_provider: str = "gemini"  # provider abstraction switch (Stage 6/7)
 
     # --- Memory (Breeth) ---

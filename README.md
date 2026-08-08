@@ -10,7 +10,7 @@ This is **not** a chatbot and **not** a generic content generator.
 
 ## Project Status
 
-🚧 **Stage 5 of 20 — Persona Bible + Prompt Builder**
+🚧 **Stage 6 of 20 — LLMProvider Interface**
 
 See `docs/AI_USAGE_LOG.md` for full development history and
 `docs/prompts/` for the prompt/decision log of every stage.
@@ -42,13 +42,17 @@ aether/
 │   │   │   └── agent.py     # POST /api/agent/init
 │   │   ├── services/
 │   │   │   ├── agent_service.py    # get_or_create_agent (single-agent logic)
-│   │   │   └── persona_service.py  # loads persona.json, builds voice-profile prompt
+│   │   │   ├── persona_service.py  # loads persona.json, builds voice-profile prompt
+│   │   │   └── llm/
+│   │   │       ├── base_provider.py    # LLMProvider ABC (generate/judge/summarize)
+│   │   │       └── gemini_provider.py  # GeminiProvider — REST calls via httpx
 │   │   ├── schemas/
 │   │   │   └── agent.py     # AgentInitResponse
 │   │   └── models/          # agents, posts, rejected_topics, sources_cache
 │   ├── scripts/
-│   │   ├── test_models.py   # standalone DB model verification script
-│   │   └── test_persona.py  # standalone persona/prompt-builder verification script
+│   │   ├── test_models.py         # standalone DB model verification script
+│   │   ├── test_persona.py        # standalone persona/prompt-builder verification script
+│   │   └── test_llm_provider.py   # standalone LLMProvider/Gemini verification script
 │   ├── requirements.txt
 │   └── .env.example
 ├── frontend/
@@ -161,11 +165,29 @@ profile isn't wired into `/init` yet; that's Stage 8, once the
 LLMProvider abstraction (Stage 6/7) exists to actually send it
 somewhere.
 
+## Verifying the LLMProvider Interface (Stage 6)
+
+```bash
+cd backend
+python -m scripts.test_llm_provider
+```
+
+This confirms `LLMProvider` can't be instantiated directly (it's an
+ABC), confirms `GeminiProvider` implements `name`/`generate`/`judge`/
+`summarize`, and confirms calling it without an API key raises a clear
+`GeminiConfigError` rather than a confusing network error. If
+`GEMINI_API_KEY` is set in `backend/.env`, it also makes one real
+`generate()` call as a live smoke test; if not (the default in this
+sandboxed environment), that step is skipped with an explicit message.
+Not wired into `/init` or any route yet — that's Stage 8, once
+`llm_factory.py` (Stage 7) exists to pick a provider.
+
 ## Required Environment Variables
 
 See `backend/.env.example`:
 
 - `GEMINI_API_KEY`
+- `GEMINI_MODEL` (defaults to `gemini-2.5-flash`)
 - `BREETH_API_KEY`
 - `DATABASE_URL`
 - `APP_ENV`

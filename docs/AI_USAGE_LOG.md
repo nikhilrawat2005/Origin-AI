@@ -136,3 +136,40 @@ voice trait, and the sample voice line.
 - `README.md`
 **Commit:** `feat(backend): add persona bible and voice-profile prompt builder`
 **Prompt File:** `docs/prompts/06_stage5.md`
+
+---
+
+### Stage 6
+**Date:** 2026-08-07
+**AI Tool Used:** Claude (Sonnet 5)
+**Objective:** LLMProvider Interface
+**Summary:** Added `app/services/llm/base_provider.py` — an ABC
+(`LLMProvider`) with `name`, `generate`, `judge`, and `summarize`, kept
+as three separate methods (rather than one `generate` reused with
+different prompts) so a provider can later tune params per call type
+(e.g. lower temperature for judgment) without touching the others.
+Added the first implementation, `app/services/llm/gemini_provider.py`
+(`GeminiProvider`), which calls the Gemini REST `generateContent`
+endpoint directly via `httpx` (already a dependency) rather than adding
+the `google-genai` SDK, keeping the dependency footprint small for a
+single-endpoint use case. Raises a clear `GeminiConfigError` if
+`GEMINI_API_KEY` is missing rather than surfacing a raw HTTP/auth
+failure. Added `GEMINI_MODEL` (default `gemini-2.5-flash`) to
+`config.py`/`.env.example`. No factory and no wiring into `/init` this
+stage — a provider is instantiated directly by the verification script
+only. Verified with `scripts/test_llm_provider.py`: confirms the ABC
+can't be instantiated directly, confirms `GeminiProvider` implements
+the full interface, confirms the missing-key error path, and — since no
+real `GEMINI_API_KEY` is available in this sandboxed environment —
+skips the live API smoke test with an explicit message instead of
+failing.
+**Files Changed:**
+- `backend/app/services/llm/__init__.py`
+- `backend/app/services/llm/base_provider.py`
+- `backend/app/services/llm/gemini_provider.py`
+- `backend/scripts/test_llm_provider.py`
+- `backend/app/core/config.py`
+- `backend/.env.example`
+- `README.md`
+**Commit:** `feat(backend): add LLMProvider interface and Gemini implementation`
+**Prompt File:** `docs/prompts/07_stage6.md`
