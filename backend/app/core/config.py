@@ -26,6 +26,7 @@ class Settings(BaseSettings):
 
     # --- Memory (Breeth) ---
     breeth_api_key: str = ""
+    breeth_base_url: str = "https://api.thebreeth.com"
 
     # --- Scheduler (wired in Stage 18) ---
     publish_interval_minutes: int = 60

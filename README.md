@@ -10,7 +10,7 @@ This is **not** a chatbot and **not** a generic content generator.
 
 ## Project Status
 
-🚧 **Stage 8 of 20 — Wire LLM into Init**
+🚧 **Stage 9 of 20 — Breeth Client (connection only)**
 
 See `docs/AI_USAGE_LOG.md` for full development history and
 `docs/prompts/` for the prompt/decision log of every stage.
@@ -43,6 +43,7 @@ aether/
 │   │   ├── services/
 │   │   │   ├── agent_service.py    # get_or_create_agent — creates agent, generates persona_description via LLM
 │   │   │   ├── persona_service.py  # loads persona.json, builds voice-profile prompt
+│   │   │   ├── breeth_client.py    # BreethClient — write_fact/search over Breeth's REST API
 │   │   │   └── llm/
 │   │   │       ├── base_provider.py        # LLMProvider ABC (generate/judge/summarize)
 │   │   │       ├── gemini_provider.py      # GeminiProvider — REST calls via httpx
@@ -56,7 +57,8 @@ aether/
 │   │   ├── test_persona.py            # standalone persona/prompt-builder verification script
 │   │   ├── test_llm_provider.py       # standalone LLMProvider/Gemini verification script
 │   │   ├── test_llm_factory.py        # standalone LLMFactory/OpenRouter verification script
-│   │   └── test_init_llm_wiring.py    # standalone /init + LLM-generation verification script
+│   │   ├── test_init_llm_wiring.py    # standalone /init + LLM-generation verification script
+│   │   └── test_breeth_client.py      # standalone Breeth connection verification script
 │   ├── requirements.txt
 │   └── .env.example
 ├── frontend/
@@ -244,6 +246,25 @@ curl -X POST http://localhost:8000/api/agent/init
 # GEMINI_API_KEY/OPENROUTER_API_KEY is set in backend/.env)
 ```
 
+## Verifying the Breeth Client (Stage 9)
+
+```bash
+cd backend
+python -m scripts.test_breeth_client
+```
+
+This confirms `BreethClient` raises a clear `BreethConfigError` when
+used without an API key. If `BREETH_API_KEY` is set in `backend/.env`,
+it also makes two real calls as a live connection test: writes a
+uniquely-marked test fact via `POST /v1/facts`
+(`client.write_fact(...)`), then searches for that marker via
+`POST /v1/search` (`client.search(...)`) and confirms the fact comes
+back. If no key is set (the default in this sandboxed environment),
+the live round-trip is skipped with an explicit message, same pattern
+as Stages 6/7's provider smoke tests. Connection only — no
+namespace-per-agent logic yet (that's Stage 10) and no dedup/memory
+queries against the pipeline (Stage 15+).
+
 ## Required Environment Variables
 
 See `backend/.env.example`:
@@ -254,6 +275,7 @@ See `backend/.env.example`:
 - `OPENROUTER_MODEL` (defaults to `openai/gpt-4o-mini`)
 - `LLM_PROVIDER` (`gemini` or `openrouter`, defaults to `gemini`)
 - `BREETH_API_KEY`
+- `BREETH_BASE_URL` (defaults to `https://api.thebreeth.com`)
 - `DATABASE_URL`
 - `APP_ENV`
 - `PORT`

@@ -257,3 +257,51 @@ configured API key in this environment) still succeeds with
 - `README.md`
 **Commit:** `feat(backend): generate persona description via LLM on agent init`
 **Prompt File:** `docs/prompts/09_stage8.md`
+
+---
+
+### Stage 9
+**Date:** 2026-08-07
+**AI Tool Used:** Claude (Sonnet 5)
+**Objective:** Breeth Client (connection only)
+**Summary:** Per `PROJECT_STATUS.md`'s Known Constraint #3, fetched
+current Breeth docs (docs.thebreeth.com) before writing any code
+rather than guessing at the API shape. Confirmed: base URL
+`https://api.thebreeth.com`, all routes under `/v1`, Bearer-token auth
+(`ck_live_...` API keys), and a JSON error envelope
+(`{"error": "<slug>", "message": "..."}`). Added
+`app/services/breeth_client.py` (`BreethClient`) with two methods for
+this stage's connection-test scope: `write_fact(subject, predicate,
+object_, group_id, extract_intent)`, calling `POST /v1/facts` (chosen
+over `POST /v1/episodes` for the write side of the test — it's the
+structured, minimal-overhead ingest path, a better fit for "prove
+connectivity" than the heavier prose-extraction pipeline episodes
+run), and `search(query, group_id, limit)`, calling `POST /v1/search`
+(hybrid BM25 + vector + graph retrieval) as the read side. Both raise
+`BreethConfigError` if `BREETH_API_KEY` is unset (mirroring
+`GeminiConfigError`/`OpenRouterConfigError` from Stages 6/7) and
+`BreethAPIError` (carrying the parsed `slug`/`message`) on any
+non-2xx response, so a caller can distinguish e.g. `quota_exceeded`
+from `unauthenticated` without re-parsing the response. Added
+`BREETH_BASE_URL` (default `https://api.thebreeth.com`) to
+`config.py`/`.env.example` alongside the existing `BREETH_API_KEY`, so
+the endpoint is swappable without a code change (useful if Breeth ever
+ships a staging/self-hosted URL). No namespace-per-agent logic and no
+wiring into `/init` yet — that's Stage 10. Verified with
+`scripts/test_breeth_client.py`: confirms the missing-key path raises
+`BreethConfigError`, and — since no real `BREETH_API_KEY` is available
+in this sandboxed environment — conditionally runs a live round-trip
+(write a uniquely-marked test fact, then search for that marker and
+confirm it comes back) only if a key is present, skipped cleanly
+otherwise with an explicit message, same pattern as Stage 6/7's
+provider smoke tests. Re-ran `test_llm_provider.py`,
+`test_llm_factory.py`, and `test_init_llm_wiring.py` to confirm no
+regressions.
+**Files Changed:**
+- `backend/app/services/breeth_client.py`
+- `backend/scripts/test_breeth_client.py`
+- `backend/app/core/config.py`
+- `backend/.env.example`
+- `README.md`
+**Commit:** `feat(backend): add Breeth client for facts/search with connection verification`
+**Prompt File:** `docs/prompts/10_stage9.md`
