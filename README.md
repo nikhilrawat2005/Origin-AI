@@ -10,7 +10,7 @@ This is **not** a chatbot and **not** a generic content generator.
 
 ## Project Status
 
-🚧 **Stage 6 of 20 — LLMProvider Interface**
+🚧 **Stage 7 of 20 — LLMFactory + Second Provider**
 
 See `docs/AI_USAGE_LOG.md` for full development history and
 `docs/prompts/` for the prompt/decision log of every stage.
@@ -23,7 +23,7 @@ See `docs/AI_USAGE_LOG.md` for full development history and
 | Backend    | FastAPI |
 | Database   | SQLite (via SQLAlchemy) |
 | Memory     | Breeth |
-| LLM        | Gemini (behind a provider abstraction) |
+| LLM        | Gemini + OpenRouter (behind a provider abstraction) |
 | Scheduler  | APScheduler |
 | Deployment | Railway |
 
@@ -44,15 +44,18 @@ aether/
 │   │   │   ├── agent_service.py    # get_or_create_agent (single-agent logic)
 │   │   │   ├── persona_service.py  # loads persona.json, builds voice-profile prompt
 │   │   │   └── llm/
-│   │   │       ├── base_provider.py    # LLMProvider ABC (generate/judge/summarize)
-│   │   │       └── gemini_provider.py  # GeminiProvider — REST calls via httpx
+│   │   │       ├── base_provider.py        # LLMProvider ABC (generate/judge/summarize)
+│   │   │       ├── gemini_provider.py      # GeminiProvider — REST calls via httpx
+│   │   │       ├── openrouter_provider.py  # OpenRouterProvider — REST calls via httpx
+│   │   │       └── llm_factory.py          # get_llm_provider() — env-driven switch
 │   │   ├── schemas/
 │   │   │   └── agent.py     # AgentInitResponse
 │   │   └── models/          # agents, posts, rejected_topics, sources_cache
 │   ├── scripts/
 │   │   ├── test_models.py         # standalone DB model verification script
 │   │   ├── test_persona.py        # standalone persona/prompt-builder verification script
-│   │   └── test_llm_provider.py   # standalone LLMProvider/Gemini verification script
+│   │   ├── test_llm_provider.py   # standalone LLMProvider/Gemini verification script
+│   │   └── test_llm_factory.py    # standalone LLMFactory/OpenRouter verification script
 │   ├── requirements.txt
 │   └── .env.example
 ├── frontend/
@@ -182,12 +185,38 @@ sandboxed environment), that step is skipped with an explicit message.
 Not wired into `/init` or any route yet — that's Stage 8, once
 `llm_factory.py` (Stage 7) exists to pick a provider.
 
+## Verifying the LLMFactory + Second Provider (Stage 7)
+
+```bash
+cd backend
+python -m scripts.test_llm_factory
+```
+
+This confirms `OpenRouterProvider` implements the full `LLMProvider`
+interface (mirroring `GeminiProvider`'s checks in Stage 6), confirms
+its missing-API-key path raises a clear `OpenRouterConfigError`, and —
+the actual point of this stage — confirms `get_llm_provider()` from
+`llm_factory.py` really switches concrete implementations based on
+`LLM_PROVIDER`: no args resolves to `GeminiProvider` (the `.env`
+default), `get_llm_provider("openrouter")` resolves to
+`OpenRouterProvider`, the lookup is case-insensitive, and an unknown
+provider name raises `UnknownLLMProviderError` instead of silently
+falling back to something. If `OPENROUTER_API_KEY` is set in
+`backend/.env`, it also makes one real `generate()` call as a live
+smoke test; otherwise that step is skipped with an explicit message,
+same pattern as Stage 6. Not wired into `/init` or any route yet —
+that's Stage 8, which is the first place callers actually use
+`get_llm_provider()` instead of instantiating a concrete provider.
+
 ## Required Environment Variables
 
 See `backend/.env.example`:
 
 - `GEMINI_API_KEY`
 - `GEMINI_MODEL` (defaults to `gemini-2.5-flash`)
+- `OPENROUTER_API_KEY`
+- `OPENROUTER_MODEL` (defaults to `openai/gpt-4o-mini`)
+- `LLM_PROVIDER` (`gemini` or `openrouter`, defaults to `gemini`)
 - `BREETH_API_KEY`
 - `DATABASE_URL`
 - `APP_ENV`

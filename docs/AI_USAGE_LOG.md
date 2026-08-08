@@ -173,3 +173,46 @@ failing.
 - `README.md`
 **Commit:** `feat(backend): add LLMProvider interface and Gemini implementation`
 **Prompt File:** `docs/prompts/07_stage6.md`
+
+---
+
+### Stage 7
+**Date:** 2026-08-07
+**AI Tool Used:** Claude (Sonnet 5)
+**Objective:** LLMFactory + Second Provider
+**Summary:** Added `app/services/llm/openrouter_provider.py`
+(`OpenRouterProvider`) — the second concrete `LLMProvider`, calling
+OpenRouter's OpenAI-compatible `/chat/completions` endpoint via
+`httpx`, mirroring `GeminiProvider`'s structure (`_call()` helper,
+dedicated `OpenRouterConfigError` for a missing key). Added
+`app/services/llm/llm_factory.py` — `get_llm_provider()`, a small
+name-to-class registry keyed off `settings.llm_provider`
+(case-insensitive), raising `UnknownLLMProviderError` for anything not
+registered rather than silently defaulting. Added `OPENROUTER_API_KEY`
+and `OPENROUTER_MODEL` (default `openai/gpt-4o-mini`) to
+`config.py`/`.env.example`. From this stage on, the codebase's rule is
+that nothing outside `app/services/llm/` should import a concrete
+provider class directly — callers get an instance from
+`get_llm_provider()` instead, which is what makes the provider
+actually swappable per the PRD's "LLM: Gemini, behind a provider
+abstraction (swappable)" line. No wiring into `/init` or any route
+yet — that's Stage 8. Verified with `scripts/test_llm_factory.py`:
+confirms `OpenRouterProvider` implements the full interface, confirms
+its missing-key error path, confirms the factory resolves to
+`GeminiProvider` by default and to `OpenRouterProvider` when asked,
+confirms case-insensitive lookup, confirms an unknown provider name
+raises `UnknownLLMProviderError`, and — since no real
+`OPENROUTER_API_KEY` is available in this sandboxed environment —
+skips the live API smoke test with an explicit message, same pattern
+as Stage 6's Gemini test. Re-ran `scripts/test_llm_provider.py`
+(Stage 6) to confirm nothing regressed.
+**Files Changed:**
+- `backend/app/services/llm/openrouter_provider.py`
+- `backend/app/services/llm/llm_factory.py`
+- `backend/app/services/llm/__init__.py`
+- `backend/scripts/test_llm_factory.py`
+- `backend/app/core/config.py`
+- `backend/.env.example`
+- `README.md`
+**Commit:** `feat(backend): add LLMFactory and OpenRouter provider for env-driven LLM switching`
+**Prompt File:** `docs/prompts/08_stage7.md`
