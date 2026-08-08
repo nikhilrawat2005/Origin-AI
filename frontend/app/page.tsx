@@ -1,6 +1,28 @@
+"use client";
+
 import Link from "next/link";
+import { useState } from "react";
+import { initAgent, type AgentInitResponse } from "./lib/api";
+
+type LoadState = "idle" | "loading" | "error";
 
 export default function LandingPage() {
+  const [agent, setAgent] = useState<AgentInitResponse | null>(null);
+  const [loadState, setLoadState] = useState<LoadState>("idle");
+
+  async function handleInitialize() {
+    setLoadState("loading");
+    try {
+      const result = await initAgent();
+      setAgent(result);
+      setLoadState("idle");
+    } catch {
+      setLoadState("error");
+    }
+  }
+
+  const isActive = agent?.status === "active";
+
   return (
     <main>
       <nav className="topnav">
@@ -8,7 +30,7 @@ export default function LandingPage() {
         <Link href="/feed">Feed</Link>
       </nav>
 
-      <h1 style={{ marginBottom: 8 }}>Aether</h1>
+      <h1 style={{ marginBottom: 8 }}>{agent?.personaName ?? "Aether"}</h1>
       <p style={{ color: "var(--muted)", marginTop: 0, marginBottom: 32 }}>
         Autonomous AI Technology Research Persona
       </p>
@@ -17,12 +39,12 @@ export default function LandingPage() {
         <p style={{ marginTop: 0, color: "var(--muted)", fontSize: 13 }}>
           Persona
         </p>
-        <h2 style={{ margin: "0 0 12px" }}>Not yet initialized</h2>
+        <h2 style={{ margin: "0 0 12px" }}>
+          {agent ? "Initialized" : "Not yet initialized"}
+        </h2>
         <p style={{ color: "var(--muted)", lineHeight: 1.6 }}>
-          Once initialized, Aether independently discovers AI/tech topics,
-          applies editorial judgment on what deserves publishing, writes in a
-          consistent voice, remembers what it has already covered, and
-          publishes new posts over time — with no further human prompting.
+          {agent?.personaDescription ??
+            "Once initialized, Aether independently discovers AI/tech topics, applies editorial judgment on what deserves publishing, writes in a consistent voice, remembers what it has already covered, and publishes new posts over time — with no further human prompting."}
         </p>
       </section>
 
@@ -39,14 +61,39 @@ export default function LandingPage() {
           <p style={{ margin: 0, color: "var(--muted)", fontSize: 13 }}>
             Agent Status
           </p>
-          <span className="badge">Not Initialized</span>
+          <span className="badge">
+            {isActive ? "Active" : agent ? agent.status : "Not Initialized"}
+          </span>
         </div>
 
-        {/* Stage 3: static skeleton only — wired to POST /api/agent/init in a later stage */}
-        <button className="primary" disabled>
-          Initialize Agent
+        <button
+          className="primary"
+          disabled={loadState === "loading" || isActive}
+          onClick={handleInitialize}
+        >
+          {isActive
+            ? "Initialized"
+            : loadState === "loading"
+              ? "Initializing…"
+              : "Initialize Agent"}
         </button>
       </section>
+
+      {loadState === "error" && (
+        <p style={{ color: "var(--muted)", marginTop: 16, fontSize: 13 }}>
+          Couldn't reach the backend. Is it running?
+        </p>
+      )}
+
+      {isActive && (
+        <p style={{ color: "var(--muted)", marginTop: 16, fontSize: 13 }}>
+          Head to the{" "}
+          <Link href="/feed" style={{ color: "var(--accent)" }}>
+            Feed
+          </Link>{" "}
+          to watch posts appear automatically as the agent publishes.
+        </p>
+      )}
     </main>
   );
 }

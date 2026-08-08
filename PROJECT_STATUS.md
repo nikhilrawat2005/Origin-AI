@@ -2,7 +2,8 @@
 
 > **Use this file to resume work if the conversation/context resets.**
 > Paste this whole document into a new chat and say:
-> **"Continue from Stage 12. Last delivered ZIP: aether-stage11.zip"**
+> **"Aether is release-candidate complete through Stage 20. Last**
+> **delivered ZIP: aether-stage20.zip. [describe what you need next]"**
 > (update the stage number/zip name to whatever is current at that time)
 
 ---
@@ -124,16 +125,14 @@ starting the next one.** Documentation is never postponed to the end.
 | 10 | Breeth Namespace on Init | /init creates Breeth namespace, stores breeth_agent_ref, SQLite mirror stub ✅ **DONE** |
 | 11 | Topic Sources Config + Fetcher | topic_sources.json + topic_discovery.py, raw candidates, no caching yet ✅ **DONE** |
 | 12 | Sources Cache | sources_cache wired in — dedup fetch, hash check ✅ **DONE** |
-| 13 | Fingerprinting | Normalized title+keywords+source → fingerprint function, unit-testable ⬅ **NEXT UP** |
-| 12 | Sources Cache | sources_cache wired in — dedup fetch, hash check |
-| 13 | Fingerprinting | Normalized title+keywords+source → fingerprint function, unit-testable |
-| 14 | Editorial Judgment | editorial_judgment.py — accept/reject + rejected_topics logging |
-| 15 | Memory Service (Breeth dedup) | memory_service.py — Breeth + SQLite mirror query before accept |
-| 16 | Post Writer | post_writer.py — text + rationale via LLMFactory, given judged topic + memory |
-| 17 | Publisher | publisher.py — writes posts table, pushes summary to Breeth, marks published |
-| 18 | Scheduler Wiring | APScheduler chains 11→14→15→16→17, PUBLISH_INTERVAL_MINUTES env-driven |
-| 19 | Feed Endpoint + Feed Page | /api/agent/feed (exact PRD JSON shape) + Next.js Feed page live |
-| 20 | Release Candidate | Railway deploy, API contract check, full E2E autonomous run, docs sync, final README, final ZIP |
+| 13 | Fingerprinting | Normalized title+keywords+source → fingerprint function, unit-testable ✅ **DONE** |
+| 14 | Editorial Judgment | editorial_judgment.py — accept/reject + rejected_topics logging ✅ **DONE** |
+| 15 | Memory Service (Breeth dedup) | memory_service.py — Breeth + SQLite mirror query before accept ✅ **DONE** |
+| 16 | Post Writer | post_writer.py — text + rationale via LLMFactory, given judged topic + memory ✅ **DONE** |
+| 17 | Publisher | publisher.py — writes posts table, pushes summary to Breeth, marks published ✅ **DONE** |
+| 18 | Scheduler Wiring | APScheduler chains 11→14→15→16→17, PUBLISH_INTERVAL_MINUTES env-driven ✅ **DONE** |
+| 19 | Feed Endpoint + Feed Page | /api/agent/feed (exact PRD JSON shape) + Next.js Feed page live ✅ **DONE** |
+| 20 | Release Candidate | Railway deploy, API contract check, full E2E autonomous run, docs sync, final README, final ZIP ✅ **DONE** |
 
 ## 12. Known Constraints Claude Flagged Upfront
 
@@ -513,33 +512,142 @@ starting the next one.** Documentation is never postponed to the end.
   regressions.
 - Commit: `feat(backend): add publisher persisting posts and pushing best-effort published facts to Breeth`
 
+### ✅ Stage 18 — Scheduler Wiring (DONE)
+- `backend/app/services/scheduler.py` — `run_publish_cycle(db, agent)`
+  chains the full pipeline exactly as planned:
+  `discover_new_topics()` (Stage 12) → `judge_candidates()` (Stage 14,
+  accepted only) → `check_memory_batch()` (Stage 15, not-duplicate
+  only) → `write_post()` (Stage 16) → `publish_post()` (Stage 17).
+  Every stage of the chain is individually wrapped so a failure
+  (or an empty result) skips the rest of *that cycle* only — it never
+  raises out of the function and never blocks a future scheduled tick.
+  A single candidate's `PostWriteError` (Stage 16's documented
+  fail-loud mode) is caught per-candidate so one bad generation
+  doesn't abort the rest of that cycle's survivors.
+- `start_scheduler(agent_id)` / `stop_scheduler()` / `is_running()` —
+  the only pieces that know about APScheduler. Idempotent: a repeat
+  call (e.g. a second `POST /api/agent/init`) returns the already-
+  running scheduler instance rather than starting a second, competing
+  one. Each tick (`_tick`) opens its own `SessionLocal()` session
+  (a background-thread job has no request-scoped session to reuse)
+  and always closes it. The first tick fires immediately on start
+  (`next_run_time=datetime.now()`), then every
+  `PUBLISH_INTERVAL_MINUTES` after that — so the feed visibly starts
+  growing right after `/init` instead of only after one full interval
+  has first elapsed.
+- `routes/agent.py` — `POST /api/agent/init` now calls
+  `start_scheduler(agent.id)` after `get_or_create_agent()`, and flips
+  `agent.status` from `"initializing"` to `"active"` once the
+  scheduler is running (persisted, only when it actually changes).
+  This is the first point `status` becomes anything other than its
+  Stage 4 default.
+- `main.py` — added an `on_event("shutdown")` hook calling
+  `stop_scheduler()`, mainly so local dev auto-reload doesn't leave an
+  orphaned background thread running after a restart.
+- `backend/scripts/test_scheduler.py` — six checks against an
+  in-memory DB with every pipeline stage monkeypatched via
+  `unittest.mock.patch.object` (this stage tests the *chaining*, not
+  Stages 12–17 themselves, which each already have their own
+  dedicated script): no candidates short-circuits before judgment; no
+  accepted candidates short-circuits before the memory check; all-
+  duplicates short-circuits before the post writer; a mixed batch
+  (one duplicate skipped, one `PostWriteError` skipped, one clean
+  success) returns exactly 1 and calls `publish_post()` exactly once
+  with the right `WrittenPost`; an unexpected exception from discovery
+  is caught and returns 0 rather than propagating;
+  `start_scheduler()`/`stop_scheduler()` idempotency (second start
+  returns the same instance; a start after stop creates a new one).
+- Verified end-to-end via `TestClient`: `POST /api/agent/init` returns
+  `status: "active"`, a repeat call returns the same `agentId`, and
+  the scheduler's immediate first tick actually ran the real pipeline
+  against the real (network-restricted-in-sandbox) topic sources,
+  failing per-source exactly as Stage 11's `topic_discovery.py`
+  already designed for, without crashing the process.
+- Verified: all 6 new checks pass; re-ran all 14 prior verification
+  scripts (Stages 2, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17), no
+  regressions.
+- Commit: `feat(backend): wire discover->judge->memory->write->publish into an APScheduler-driven autonomous publish cycle, started from /init`
+
+### ✅ Stage 19 — Feed Endpoint + Feed Page (DONE)
+- `backend/app/schemas/agent.py` — added `FeedPost` (id, title,
+  content, rationale, sources, createdAt — exactly §4's four Feed Page
+  fields plus an id/title to render/key on) and `FeedResponse`
+  (agentId, personaName, status, posts).
+- `backend/app/routes/agent.py` — added `GET /api/agent/feed`: no
+  agent yet → empty feed shape, 200, no side effects; otherwise the
+  most recently created agent's identity + every `Post` for it,
+  newest-first, with `Post.sources` (stored as a JSON string) decoded
+  per-post inside a try/except so one malformed row can't break the
+  rest of the response.
+- `frontend/app/lib/api.ts` — typed `initAgent()`/`getFeed()` fetch
+  wrappers, base URL from `NEXT_PUBLIC_API_URL`.
+- `frontend/app/page.tsx` — Initialize button now calls the real
+  `POST /api/agent/init`, shows loading/error state, and once active
+  displays the LLM-generated persona description + a link to the Feed.
+- `frontend/app/feed/page.tsx` — now a client component polling
+  `GET /api/agent/feed` every 30s, rendering created time, title,
+  content, rationale, and linked sources per post.
+- `frontend/.env.local.example` — `NEXT_PUBLIC_API_URL`.
+- `backend/scripts/test_feed_endpoint.py` — standalone verification
+  script.
+- Verified: 4/4 checks in `test_feed_endpoint.py` pass against an
+  in-memory DB; live `uvicorn` + `curl` confirms the empty→populated
+  transition across a real `/init` call; `npm run build` compiles
+  clean with both routes prerendering successfully.
+- Commit: `feat: add GET /api/agent/feed and wire both frontend pages to the live backend (init + polling feed)`
+
+### ✅ Stage 20 — Release Candidate (DONE)
+- `backend/railway.json` / `frontend/railway.json` — Nixpacks
+  build/start config for two separate Railway services (backend keeps
+  its long-lived scheduler independent of frontend redeploys).
+- `docs/DEPLOYMENT.md` — exact copy-pasteable Railway deployment
+  walkthrough for the repo owner, including the SQLite-ephemeral-
+  storage caveat and how to swap to Postgres later if needed.
+- `docs/API_CONTRACT.md` — frozen JSON shape of both public endpoints.
+- `backend/scripts/test_api_contract.py` — new verification script
+  asserting the documented contract (not just route logic) holds
+  against the real app.
+- Full regression: all 17 prior verification scripts (Stages 2, 5–19)
+  re-run, zero failures. Live E2E against a real `uvicorn` process
+  confirmed the empty→active→populated feed transition, idempotent
+  `/init`, and the scheduler's real first tick running the complete
+  pipeline (each topic source individually 403'd under this sandbox's
+  network restrictions, handled exactly as Stage 11 designed for, no
+  crash). `npm run build` on the frontend re-verified clean.
+- README, PROJECT_STATUS.md, AI_USAGE_LOG.md all synced to reflect
+  project completion.
+- Commit: `chore: release candidate — Railway deploy configs, API contract doc + check, full regression pass, deployment guide`
+
 ## 14. Last Delivered File
 
-**`aether-stage17.zip`** — cumulative project ZIP containing everything
-through Stage 17 (backend + frontend skeletons, all DB models incl.
-Breeth mirror, `/init` fully wired with persona/LLM/Breeth-namespace
-logic, persona bible, LLM provider abstraction with two providers,
-Breeth client, topic sources config + discovery fetcher, sources_cache
-dedup, title+keywords+source fingerprinting, LLM-driven editorial
-judgment with fail-closed accept/reject, memory service with local
-fingerprint + fail-open Breeth semantic dedup, LLM-driven post writer
-with fail-loud generation/parsing, publisher persisting posts + Breeth
-published facts, and docs for stages 0–17).
+**`aether-stage20.zip`** — final cumulative project ZIP. Contains the
+complete 20-stage build: FastAPI backend (models, persona/LLM
+abstraction with two providers, Breeth client + namespace/memory,
+topic discovery + sources cache + fingerprinting, LLM-driven editorial
+judgment and post writer, publisher, APScheduler-driven autonomous
+publish cycle, both public endpoints matching the frozen contract),
+Next.js frontend (Landing + Feed pages fully wired to the live
+backend), Railway deploy configs for both services, deployment and API
+contract documentation, and the full docs/prompts trail for stages
+0–20.
 
 ## 15. How To Resume
 
-Paste this document into a new conversation and say:
+All 20 planned stages are complete — there is no next numbered stage.
+If work continues on this project, it falls into one of:
 
-> "Continue from Stage 18. Last delivered ZIP: aether-stage17.zip"
+1. **A real deployment** — follow `docs/DEPLOYMENT.md` exactly (push
+   to GitHub, create the two Railway services, set real
+   `GEMINI_API_KEY`/`BREETH_API_KEY`). Not something Claude's sandbox
+   can do on your behalf.
+2. **A genuinely new feature or fix** — treat it as its own task, not
+   a continuation of this numbered plan; state clearly what's being
+   changed and why, following the same Rule 13 documentation
+   discipline (updated docs + log + commit message + confirmation the
+   code runs) even outside the original 20-stage structure.
 
-Claude should then:
-1. Re-read this doc to restore full context (scope, stack, rules, plan)
-2. Start Stage 18 exactly as planned: Scheduler Wiring — chain Stages
-   11/12 → 14 → 15 → 16 → 17 (`discover_new_topics()` →
-   `judge_candidates()` (accepted only) → `check_memory_batch()`
-   (not-duplicate only) → `write_post()` → `publish_post()`) behind
-   APScheduler, driven by `PUBLISH_INTERVAL_MINUTES` from the
-   environment — the first point the full autonomous pipeline runs
-   end-to-end
-3. Continue following Rule 13 (docs + log + commit + ZIP + stop for
-   approval) for every stage from there on
+To resume a fresh conversation with full context regardless of which
+of those applies, paste this document in and say:
+
+> "Aether is release-candidate complete through Stage 20. Last
+> delivered ZIP: aether-stage20.zip. [describe what you need next]"

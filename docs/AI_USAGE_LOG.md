@@ -599,3 +599,161 @@ any route or scheduler yet.
 - `README.md`
 **Commit:** `feat(backend): add publisher persisting posts and pushing best-effort published facts to Breeth`
 **Prompt File:** `docs/prompts/18_stage17.md`
+
+### Stage 18
+**Date:** 2026-08-08
+**AI Tool Used:** Claude (Sonnet 5)
+**Objective:** Scheduler Wiring
+**Summary:** Added `app/services/scheduler.py`. `run_publish_cycle(db, agent)`
+chains the full autonomous pipeline exactly as every prior stage's
+docstring already described it: `discover_new_topics()` (Stage 12) →
+`judge_candidates()` (Stage 14, accepted only) → `check_memory_batch()`
+(Stage 15, not-duplicate only) → `write_post()` (Stage 16) →
+`publish_post()` (Stage 17). Each stage of the chain is wrapped in its
+own try/except that logs and returns `0` rather than raising, so an
+unexpected failure anywhere skips one cycle instead of ending the
+autonomous loop entirely; `PostWriteError` (Stage 16's documented
+fail-loud mode) is caught per-candidate inside the survivors loop so
+one bad generation doesn't discard the rest of that cycle's batch.
+`start_scheduler(agent_id)` is the only piece that knows about
+APScheduler — idempotent via a module-level guard (mirrors
+`get_or_create_agent()`'s own repeat-call contract), each tick opens
+its own `SessionLocal()` session since a background-thread job has no
+request-scoped session to reuse, and the first tick fires immediately
+on start (then every `PUBLISH_INTERVAL_MINUTES` after) so the feed
+visibly starts growing right after `/init` rather than after one full
+interval first elapses. `routes/agent.py`'s `POST /api/agent/init` now
+calls `start_scheduler(agent.id)` and flips `agent.status` to
+`"active"`; `main.py` stops the scheduler on shutdown. Verified via
+`unittest.mock.patch.object` against every chained function (six
+checks: short-circuit paths at each empty-result gate, a mixed
+duplicate/failure/success batch, an unexpected discovery exception
+caught cleanly, and `start_scheduler`/`stop_scheduler` idempotency)
+and confirmed live end-to-end with FastAPI's `TestClient` — `/init`
+returns `status: "active"`, is idempotent on repeat calls, and its
+immediate first tick genuinely ran the real pipeline against real
+topic sources without crashing.
+**Files Changed:**
+- `backend/app/services/scheduler.py`
+- `backend/app/routes/agent.py`
+- `backend/app/main.py`
+- `backend/scripts/test_scheduler.py`
+- `README.md`
+- `PROJECT_STATUS.md`
+**Commit:** `feat(backend): wire discover->judge->memory->write->publish into an APScheduler-driven autonomous publish cycle, started from /init`
+**Prompt File:** `docs/prompts/19_stage18.md`
+
+---
+
+### Stage 19
+**Date:** 2026-08-08
+**AI Tool Used:** Claude (Sonnet 5)
+**Objective:** Feed Endpoint + Feed Page
+**Summary:** Added `GET /api/agent/feed`, the second and last public
+endpoint the PRD allows. Returns the most recently created agent's
+identity (`agentId`, `personaName`, `status`) plus every `Post` row for
+that agent, newest first, via two new schemas (`FeedPost`,
+`FeedResponse` in `schemas/agent.py`). Deliberately side-effect-free —
+if `/init` was never called it returns an empty feed (all identity
+fields `null`, `posts: []`) with a 200 rather than a 404 or creating an
+agent as a side effect, keeping the "only 2 public endpoints, each with
+one job" split from §5 intact. `Post.sources` is a JSON-encoded string
+column (Stage 2); the route `json.loads()`s it per-post inside a
+try/except so one malformed row falls back to `[]` instead of taking
+down the whole feed response.
+
+Wired both frontend pages against the real backend for the first time
+— everything before this stage was a static skeleton. Added
+`frontend/app/lib/api.ts` (typed `initAgent()`/`getFeed()` wrappers
+around `fetch`, base URL from `NEXT_PUBLIC_API_URL`, default
+`localhost:8000`). Landing page's "Initialize Agent" button now calls
+`POST /api/agent/init`, shows a loading/error state, and once active
+displays the LLM-generated `personaDescription` and a link to the
+Feed. Feed page is now a client component that fetches on mount and
+polls every 30s (`setInterval`, cleaned up on unmount) — polling
+rather than fetch-once, since the PRD's core success criterion is
+specifically that the feed grows *without* a human re-triggering
+anything, so the page needs to show that happening live. Each post
+renders created time, title, content, rationale, and a linked list of
+sources — exactly the four fields §4 specifies for the Feed Page, no
+more.
+
+Verified with a new `backend/scripts/test_feed_endpoint.py`
+(`TestClient` + in-memory SQLite via `StaticPool`, four checks: empty
+feed pre-init, agent-with-zero-posts shape, newest-first ordering with
+`sources` correctly decoded back into a list, and a malformed
+`sources` string falling back to `[]` without breaking other posts —
+all pass), a live `uvicorn` + `curl` run confirming the exact same
+empty→populated transition across a real `/init` call, and
+`npm run build` on the frontend (compiles clean, both routes
+prerender as static shells that hydrate and fetch client-side).
+**Files Changed:**
+- `backend/app/schemas/agent.py`
+- `backend/app/routes/agent.py`
+- `backend/scripts/test_feed_endpoint.py`
+- `frontend/app/lib/api.ts`
+- `frontend/app/page.tsx`
+- `frontend/app/feed/page.tsx`
+- `frontend/.env.local.example`
+- `README.md`
+- `PROJECT_STATUS.md`
+**Commit:** `feat: add GET /api/agent/feed and wire both frontend pages to the live backend (init + polling feed)`
+**Prompt File:** `docs/prompts/20_stage19.md`
+
+---
+
+### Stage 20
+**Date:** 2026-08-08
+**AI Tool Used:** Claude (Sonnet 5)
+**Objective:** Release Candidate
+**Summary:** Final stage — no new application code, since Stage 19
+already closed out the PRD's full functional scope (both endpoints,
+both pages, the autonomous pipeline). This stage adds what a release
+candidate needs beyond working code: `backend/railway.json` and
+`frontend/railway.json` (Nixpacks build/start config for two separate
+Railway services from this one repo — chosen over a single combined
+service specifically because the backend runs a long-lived
+`BackgroundScheduler` that shouldn't restart on every frontend
+redeploy); `docs/DEPLOYMENT.md`, an exact copy-pasteable walkthrough
+for the repo owner to actually create both Railway services, set env
+vars, and verify the live deployment (Claude's sandbox cannot push to
+a real GitHub remote or Railway project, per the Known Constraints in
+`PROJECT_STATUS.md` §12 — this was flagged again explicitly rather
+than silently skipped); `docs/API_CONTRACT.md`, freezing the exact
+JSON shape of both public endpoints as documentation; and
+`backend/scripts/test_api_contract.py`, a new verification script
+distinct in purpose from Stage 19's `test_feed_endpoint.py` — it
+asserts the *documented contract* (field names, types, nullability)
+holds against the real FastAPI app, rather than testing route logic.
+
+Ran a full regression pass: all 17 prior verification scripts
+(Stages 2, 5–19) re-run back-to-back, zero regressions — confirms
+Stage 19/20's additions (both purely additive: a new route + two new
+schema classes + a new script) didn't touch anything load-bearing.
+Also did a genuine live end-to-end run against a real `uvicorn`
+process in this sandbox (not just `TestClient`): `GET /feed` returns
+empty, `POST /init` flips to `status: "active"` and is idempotent on
+repeat, and the scheduler's immediate first tick ran the complete
+discover→judge→memory→write→publish pipeline against real topic
+sources — each failing individually with a `403` under this sandbox's
+network restrictions exactly as Stage 11 already designed for, without
+crashing. Also re-ran `npm run build` on the frontend — clean, no
+regressions from Stage 19.
+
+Updated `README.md`'s Project Status to "Stage 20 of 20 — Release
+Candidate, all 20 stages complete," added a Stage 20 verification
+section and a closing "Release Notes" section stating plainly what's
+done vs. what still needs the repo owner (a real `git push` +
+Railway project creation, and a live run with real
+`GEMINI_API_KEY`/`BREETH_API_KEY`) — not glossed over as if the
+sandbox could do those itself.
+**Files Changed:**
+- `backend/railway.json`
+- `frontend/railway.json`
+- `docs/DEPLOYMENT.md`
+- `docs/API_CONTRACT.md`
+- `backend/scripts/test_api_contract.py`
+- `README.md`
+- `PROJECT_STATUS.md`
+**Commit:** `chore: release candidate — Railway deploy configs, API contract doc + check, full regression pass, deployment guide`
+**Prompt File:** `docs/prompts/21_stage20.md`
