@@ -123,7 +123,8 @@ starting the next one.** Documentation is never postponed to the end.
 | 9 | Breeth Client (connection only) | breeth_client.py — connect, write/read test fact, standalone script ✅ **DONE** |
 | 10 | Breeth Namespace on Init | /init creates Breeth namespace, stores breeth_agent_ref, SQLite mirror stub ✅ **DONE** |
 | 11 | Topic Sources Config + Fetcher | topic_sources.json + topic_discovery.py, raw candidates, no caching yet ✅ **DONE** |
-| 12 | Sources Cache | sources_cache wired in — dedup fetch, hash check ⬅ **NEXT UP** |
+| 12 | Sources Cache | sources_cache wired in — dedup fetch, hash check ✅ **DONE** |
+| 13 | Fingerprinting | Normalized title+keywords+source → fingerprint function, unit-testable ⬅ **NEXT UP** |
 | 12 | Sources Cache | sources_cache wired in — dedup fetch, hash check |
 | 13 | Fingerprinting | Normalized title+keywords+source → fingerprint function, unit-testable |
 | 14 | Editorial Judgment | editorial_judgment.py — accept/reject + rejected_topics logging |
@@ -350,26 +351,93 @@ starting the next one.** Documentation is never postponed to the end.
   (Stages 2, 5, 6, 7, 8, 9, 10), no regressions
 - Commit: `feat(backend): add topic sources config and discovery fetcher`
 
+
+### ✅ Stage 12 — Sources Cache (DONE)
+- `backend/app/services/sources_cache_service.py` —
+  `compute_content_hash()` (SHA-256 over `source_name` + `url`) and
+  `filter_new_candidates()` (checks each candidate against
+  `sources_cache`, inserts a row per new one, returns only the new
+  ones); `discover_new_topics()` chains Stage 11's `discover_topics()`
+  with the filter as the combined entry point later stages will call
+- URL-level dedup only — catches the same feed entry re-fetched
+  across scheduler runs; catching the same underlying story under a
+  different URL/title is Stage 13's fingerprinting job, not this one
+- `backend/scripts/test_sources_cache.py` — standalone verification
+  (in-memory DB): hash determinism/sensitivity, first-call caching,
+  repeat-call returns nothing with no duplicate rows, mixed batch
+  (already-cached + new + in-batch duplicate) filters correctly
+- Verified: all 4 checks pass; re-ran all 8 prior verification scripts
+  (Stages 2, 5, 6, 7, 8, 9, 10, 11), no regressions
+- Commit: `feat(backend): wire sources_cache into discovery for URL-level dedup`
+
+### ✅ Stage 13 — Fingerprinting (DONE)
+- `backend/app/services/fingerprint.py` — `extract_keywords()`
+  (tokenize, strip stopwords, dedupe, cap at `MAX_KEYWORDS`);
+  `normalize_source()` (collapse to lowercase alphanumerics);
+  `compute_fingerprint()` (SHA-256 over normalized source + sorted
+  keywords); `fingerprint_candidate()` convenience wrapper over a
+  `TopicCandidate`
+- Distinct from Stage 12's literal, order-sensitive `source_name+url`
+  hash: sorting the keywords means a reworded/reordered title for the
+  same story from the same source collapses to the same fingerprint,
+  which Stage 12's hash explicitly did not catch
+- Not wired into `sources_cache`, any model, or any route yet — a
+  standalone, unit-testable function only, as scoped; wiring
+  near-duplicate rejection into the actual accept/reject path is
+  Stage 14/15's job
+- `backend/scripts/test_fingerprinting.py` — standalone verification,
+  no DB needed: determinism, reworded/reordered-title collision (the
+  core case), no collision for a genuinely different story or a
+  different source, stopword stripping + `max_keywords` capping,
+  source-name normalization, `fingerprint_candidate()` parity
+- Verified: all 7 checks pass; re-ran all 9 prior verification scripts
+  (Stages 2, 5, 6, 7, 8, 9, 10, 11, 12), no regressions
+- Commit: `feat(backend): add title+keywords+source fingerprinting for near-duplicate detection`
+
+### ✅ Stage 14 — Editorial Judgment (DONE)
+- `backend/app/services/editorial_judgment.py` — `judge_candidate()`
+  (fingerprint short-circuit against `rejected_topics`, then
+  `LLMProvider.judge()` seeded with the full persona voice profile,
+  strict `ACCEPT`/`REJECT` parsing, fail-closed on any error/ambiguity,
+  persists rejections); `judge_candidates()` batch wrapper
+- Fingerprint short-circuit (Stage 13) skips the LLM entirely for a
+  reworded/reordered-title near-duplicate of an already-rejected
+  topic, per `RejectedTopic`'s own Stage 2 docstring
+- All editorial criteria (accept/reject standards) live in
+  `persona.json` via the system prompt — no editorial logic hardcoded
+  in this module
+- Not wired into any route/scheduler yet — standalone functions only
+- `backend/scripts/test_editorial_judgment.py` — standalone
+  verification with a scripted fake provider (no API key needed):
+  ACCEPT parsing (no rejection logged), REJECT parsing (logged with
+  fingerprint+reason), fingerprint short-circuit (zero LLM calls, no
+  duplicate row), unparseable-response and provider-exception
+  fail-closed paths, batch ordering
+- Verified: all 6 checks pass; re-ran all 10 prior verification
+  scripts (Stages 2, 5, 6, 7, 8, 9, 10, 11, 12, 13), no regressions
+- Commit: `feat(backend): add editorial judgment with fail-closed LLM accept/reject and rejected_topics logging`
+
 ## 14. Last Delivered File
 
-**`aether-stage11.zip`** — cumulative project ZIP containing everything
-through Stage 11 (backend + frontend skeletons, all DB models incl.
+**`aether-stage14.zip`** — cumulative project ZIP containing everything
+through Stage 14 (backend + frontend skeletons, all DB models incl.
 Breeth mirror, `/init` fully wired with persona/LLM/Breeth-namespace
 logic, persona bible, LLM provider abstraction with two providers,
-Breeth client, topic sources config + discovery fetcher, and docs for
-stages 0–11).
+Breeth client, topic sources config + discovery fetcher, sources_cache
+dedup, title+keywords+source fingerprinting, LLM-driven editorial
+judgment with fail-closed accept/reject, and docs for stages 0–14).
 
 ## 15. How To Resume
 
 Paste this document into a new conversation and say:
 
-> "Continue from Stage 12. Last delivered ZIP: aether-stage11.zip"
+> "Continue from Stage 15. Last delivered ZIP: aether-stage14.zip"
 
 Claude should then:
 1. Re-read this doc to restore full context (scope, stack, rules, plan)
-2. Start Stage 12 exactly as planned: wire the `SourceCache` model
-   (Stage 2, unused until now) into the discovery path — hash each
-   candidate and skip ones already seen, so repeated
-   `discover_topics()` calls stop re-surfacing the same items forever
+2. Start Stage 15 exactly as planned: `memory_service.py` — query
+   Breeth + the SQLite mirror for previously *published* topics before
+   an accepted candidate reaches the post writer, the layer of dedup
+   Stage 14's fingerprint-vs-rejected-topics check doesn't cover
 3. Continue following Rule 13 (docs + log + commit + ZIP + stop for
    approval) for every stage from there on

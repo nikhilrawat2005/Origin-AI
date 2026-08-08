@@ -386,3 +386,108 @@ live call is being made to a stateful third-party account).
 - `README.md`
 **Commit:** `feat(backend): add topic sources config and discovery fetcher`
 **Prompt File:** `docs/prompts/12_stage11.md`
+
+---
+
+### Stage 12
+**Date:** 2026-08-08
+**AI Tool Used:** Claude (Sonnet 5)
+**Objective:** Sources Cache
+**Summary:** Wired the `SourceCache` model (Stage 2, unused until now)
+into the discovery path. Added
+`app/services/sources_cache_service.py`: `compute_content_hash()` — a
+deterministic SHA-256 over `source_name` + `url` — and
+`filter_new_candidates()`, which checks each `TopicCandidate` (Stage
+11) against `sources_cache` by hash, inserts a row for every new one,
+and returns only the not-previously-seen candidates. Deliberately kept
+this hash simpler than Stage 13's planned fingerprinting: it only
+answers "have I cached this exact URL from this exact source," which
+is sufficient to stop the same literal feed entry from being
+re-cached/re-considered on back-to-back scheduler runs — catching the
+same underlying story republished under a different URL or title
+variant is explicitly Stage 13's job. `discover_new_topics()` chains
+Stage 11's `discover_topics()` with the new filter as the single entry
+point later stages (starting with Stage 18's scheduler) will call. Not
+wired into any route yet. Verified against an in-memory DB: hash
+determinism (same source+url -> same hash; different url or different
+source -> different hash), first-call caching of all new candidates,
+a repeat call with identical candidates returning nothing and creating
+no duplicate rows, and a mixed batch (one already-cached, one new, one
+in-batch duplicate sharing a URL) correctly collapsing to exactly one
+new candidate and one new row.
+**Files Changed:**
+- `backend/app/services/sources_cache_service.py`
+- `backend/scripts/test_sources_cache.py`
+- `README.md`
+**Commit:** `feat(backend): wire sources_cache into discovery for URL-level dedup`
+**Prompt File:** `docs/prompts/13_stage12.md`
+
+---
+
+### Stage 13
+**Date:** 2026-08-08
+**AI Tool Used:** Claude (Sonnet 5)
+**Objective:** Fingerprinting
+**Summary:** Added `app/services/fingerprint.py` — a normalized
+title+keywords+source fingerprint function, separate from Stage 12's
+literal `source_name+url` hash. `extract_keywords()` tokenizes a
+title (and optional summary), strips a small stopword list, dedupes,
+and caps at `MAX_KEYWORDS`. `normalize_source()` collapses a source
+name to lowercase alphanumerics so formatting differences don't
+affect the fingerprint. `compute_fingerprint()` hashes
+`normalized_source + sorted(keywords)` with SHA-256 — sorting the
+keywords (unlike Stage 12's raw, order-sensitive hash) is what lets a
+reworded or reordered title for the same story, same source, still
+collapse to the same fingerprint, which is the gap Stage 12 explicitly
+left open. `fingerprint_candidate()` is a thin wrapper for
+`TopicCandidate`. Nothing is wired into `sources_cache`, the DB, or
+any route yet — this stage is the fingerprint function only, as
+planned, unit-tested in isolation via
+`backend/scripts/test_fingerprinting.py`: determinism; a
+reworded/reordered title for the same story+source producing the same
+fingerprint; a genuinely different story, and the same title from a
+different source, both producing different fingerprints; stopword
+stripping and `max_keywords` capping; source-name normalization; and
+`fingerprint_candidate()` matching a direct `compute_fingerprint()`
+call.
+**Files Changed:**
+- `backend/app/services/fingerprint.py`
+- `backend/scripts/test_fingerprinting.py`
+- `README.md`
+**Commit:** `feat(backend): add title+keywords+source fingerprinting for near-duplicate detection`
+**Prompt File:** `docs/prompts/14_stage13.md`
+
+---
+
+### Stage 14
+**Date:** 2026-08-08
+**AI Tool Used:** Claude (Sonnet 5)
+**Objective:** Editorial Judgment
+**Summary:** Added `app/services/editorial_judgment.py`. `judge_candidate()`
+first checks the candidate's Stage 13 fingerprint against existing
+`rejected_topics` rows for the agent — a match short-circuits to an
+immediate rejection without calling the LLM at all, matching what
+`RejectedTopic`'s own Stage 2 docstring already said this table was
+for ("prevents re-evaluating the same rejected topic repeatedly"). If
+no match, builds a judgment prompt from the candidate's concrete
+fields, calls `LLMProvider.judge()` (Stage 6/7) with the persona's
+full voice profile (Stage 5's `build_voice_profile_prompt()`) as the
+system prompt — so acceptance criteria come from `persona.json`'s
+`editorial_values`/`topics_of_interest`/`topics_avoided`/
+`sourcing_standards`, not from logic hardcoded in this module — and
+parses the required `ACCEPT: <reason>` / `REJECT: <reason>` response
+format. Any failure mode (provider exception, empty response,
+unparseable text) fails closed to REJECT, matching the persona's
+stated "prefer signal over volume — reject more than it accepts"
+editorial value. Rejections are persisted to `rejected_topics` with
+title, source, fingerprint, and reason; accepted candidates create no
+row (nothing to publish yet — that's Stages 16/17).
+`judge_candidates()` batches `judge_candidate()` over a list, matching
+the shape Stage 12's `discover_new_topics()` already returns. Not
+wired into any route or scheduler yet.
+**Files Changed:**
+- `backend/app/services/editorial_judgment.py`
+- `backend/scripts/test_editorial_judgment.py`
+- `README.md`
+**Commit:** `feat(backend): add editorial judgment with fail-closed LLM accept/reject and rejected_topics logging`
+**Prompt File:** `docs/prompts/15_stage14.md`

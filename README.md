@@ -10,7 +10,7 @@ This is **not** a chatbot and **not** a generic content generator.
 
 ## Project Status
 
-🚧 **Stage 11 of 20 — Topic Sources Config + Fetcher**
+🚧 **Stage 14 of 20 — Editorial Judgment**
 
 See `docs/AI_USAGE_LOG.md` for full development history and
 `docs/prompts/` for the prompt/decision log of every stage.
@@ -46,6 +46,9 @@ aether/
 │   │   │   ├── persona_service.py  # loads persona.json, builds voice-profile prompt
 │   │   │   ├── breeth_client.py    # BreethClient — write_fact/search over Breeth's REST API
 │   │   │   ├── topic_discovery.py  # discover_topics() — fetch+parse raw candidates from configured sources
+│   │   │   ├── sources_cache_service.py  # discover_new_topics() — URL-hash dedup against sources_cache
+│   │   │   ├── fingerprint.py      # compute_fingerprint() — normalized title+keywords+source near-duplicate hash
+│   │   │   ├── editorial_judgment.py  # judge_candidate(s)() — LLM accept/reject, logs rejected_topics
 │   │   │   └── llm/
 │   │   │       ├── base_provider.py        # LLMProvider ABC (generate/judge/summarize)
 │   │   │       ├── gemini_provider.py      # GeminiProvider — REST calls via httpx
@@ -62,7 +65,10 @@ aether/
 │   │   ├── test_init_llm_wiring.py    # standalone /init + LLM-generation verification script
 │   │   ├── test_breeth_client.py      # standalone Breeth connection verification script
 │   │   ├── test_breeth_namespace.py   # standalone Breeth namespace-on-init verification script
-│   │   └── test_topic_discovery.py    # standalone topic-source config/parser verification script
+│   │   ├── test_topic_discovery.py    # standalone topic-source config/parser verification script
+│   │   ├── test_sources_cache.py      # standalone sources_cache dedup verification script
+│   │   ├── test_fingerprinting.py     # standalone fingerprinting verification script
+│   │   └── test_editorial_judgment.py # standalone editorial judgment verification script
 │   ├── requirements.txt
 │   └── .env.example
 ├── frontend/
@@ -324,6 +330,111 @@ python -c "from app.services.topic_discovery import discover_topics; [print(c.so
 
 No caching/dedup yet — every call re-fetches and re-returns
 everything, including items seen on a previous run. That's Stage 12.
+
+## Verifying the Sources Cache (Stage 12)
+
+```bash
+cd backend
+python -m scripts.test_sources_cache
+```
+
+Against an in-memory DB, this confirms `compute_content_hash()` is
+deterministic and sensitive to both URL and source, that
+`filter_new_candidates()` caches and returns every candidate the first
+time it's seen, that a repeat call with the same candidates returns
+nothing and creates no duplicate rows, and that a mixed batch
+(one already-cached item, one new item, and one in-batch duplicate
+sharing a URL with the new item) correctly returns exactly one new
+candidate. `discover_new_topics()` combines Stage 11's
+`discover_topics()` with this filter — not wired into any route yet:
+
+```bash
+cd backend
+python -c "
+from app.core.database import SessionLocal, init_db
+from app.services.sources_cache_service import discover_new_topics
+init_db()
+db = SessionLocal()
+for c in discover_new_topics(db):
+    print(c.source_name, '-', c.title)
+"
+```
+
+Run it twice in a row (against the same `aether.db`) to see the second
+run return nothing new — everything from the first run is now cached.
+
+## Verifying Fingerprinting (Stage 13)
+
+```bash
+cd backend
+python -m scripts.test_fingerprinting
+```
+
+Pure unit tests, no DB involved. Confirms `compute_fingerprint()` is
+deterministic; that a reworded/reordered title for the same story from
+the same source produces the SAME fingerprint (the near-duplicate case
+Stage 12's literal URL hash doesn't catch); that a genuinely different
+story, or the same title from a different source, produces a
+DIFFERENT fingerprint; that `extract_keywords()` strips stopwords and
+respects `max_keywords`; that `normalize_source()` collapses
+formatting differences; and that `fingerprint_candidate()` matches
+calling `compute_fingerprint()` directly with a `TopicCandidate`'s
+fields. Not wired into `sources_cache` or any route yet — this stage
+is the fingerprint function only, unit-testable in isolation, to try
+it against a couple of example titles:
+
+```bash
+cd backend
+python -c "
+from app.services.fingerprint import compute_fingerprint
+print(compute_fingerprint('OpenAI launches GPT-5 with major reasoning upgrades', 'TechCrunch'))
+print(compute_fingerprint(\"GPT-5 launches: OpenAI's major upgrades to reasoning\", 'TechCrunch'))
+"
+```
+
+Both lines print the same hash — same story, reworded/reordered
+title, same source.
+
+## Verifying Editorial Judgment (Stage 14)
+
+```bash
+cd backend
+python -m scripts.test_editorial_judgment
+```
+
+Runs against an in-memory DB with a scripted fake `LLMProvider` (no
+network/API key needed). Confirms: an `ACCEPT` response is parsed
+correctly and creates no `rejected_topics` row; a `REJECT` response is
+parsed and logged with its fingerprint (Stage 13) and reason; judging
+a reworded/reordered-title near-duplicate of an already-rejected topic
+short-circuits on the fingerprint match, skips the LLM call entirely,
+and does not create a duplicate row; an unparseable model response
+fails closed (rejected); an LLM call that raises an exception fails
+closed without propagating; and `judge_candidates()` processes a batch
+in order. Not wired into any route or scheduler yet — Stage 18 will
+chain `discover_new_topics()` (Stage 12) → `judge_candidates()`
+(this stage) → memory (Stage 15) → post writing (Stage 16) → publish
+(Stage 17):
+
+```bash
+cd backend
+python -c "
+from app.core.database import SessionLocal, init_db
+from app.services.sources_cache_service import discover_new_topics
+from app.services.editorial_judgment import judge_candidates
+init_db()
+db = SessionLocal()
+candidates = discover_new_topics(db)
+for r in judge_candidates(db, agent_id='demo-agent', candidates=candidates):
+    print('ACCEPT' if r.accepted else 'REJECT', '-', r.candidate.title, '-', r.reason)
+"
+```
+
+Needs a real `GEMINI_API_KEY` (or `LLM_PROVIDER=openrouter` +
+`OPENROUTER_API_KEY`) in `backend/.env` to actually call the LLM —
+without one, `judge()` raises and every candidate fails closed to
+REJECT (see "Known Constraints" in `PROJECT_STATUS.md`), which the
+script above will still run and print correctly.
 
 ## Required Environment Variables
 
