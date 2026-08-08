@@ -9,7 +9,7 @@
     {
       "name": "arXiv cs.AI",
       "type": "rss",
-      "url": "http://export.arxiv.org/rss/cs.AI",
+      "url": "https://export.arxiv.org/rss/cs.AI",
       "category": "research"
     },
     {
