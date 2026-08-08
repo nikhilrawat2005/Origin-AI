@@ -10,7 +10,7 @@ This is **not** a chatbot and **not** a generic content generator.
 
 ## Project Status
 
-🚧 **Stage 7 of 20 — LLMFactory + Second Provider**
+🚧 **Stage 8 of 20 — Wire LLM into Init**
 
 See `docs/AI_USAGE_LOG.md` for full development history and
 `docs/prompts/` for the prompt/decision log of every stage.
@@ -41,7 +41,7 @@ aether/
 │   │   ├── routes/
 │   │   │   └── agent.py     # POST /api/agent/init
 │   │   ├── services/
-│   │   │   ├── agent_service.py    # get_or_create_agent (single-agent logic)
+│   │   │   ├── agent_service.py    # get_or_create_agent — creates agent, generates persona_description via LLM
 │   │   │   ├── persona_service.py  # loads persona.json, builds voice-profile prompt
 │   │   │   └── llm/
 │   │   │       ├── base_provider.py        # LLMProvider ABC (generate/judge/summarize)
@@ -49,13 +49,14 @@ aether/
 │   │   │       ├── openrouter_provider.py  # OpenRouterProvider — REST calls via httpx
 │   │   │       └── llm_factory.py          # get_llm_provider() — env-driven switch
 │   │   ├── schemas/
-│   │   │   └── agent.py     # AgentInitResponse
+│   │   │   └── agent.py     # AgentInitResponse (incl. personaDescription)
 │   │   └── models/          # agents, posts, rejected_topics, sources_cache
 │   ├── scripts/
-│   │   ├── test_models.py         # standalone DB model verification script
-│   │   ├── test_persona.py        # standalone persona/prompt-builder verification script
-│   │   ├── test_llm_provider.py   # standalone LLMProvider/Gemini verification script
-│   │   └── test_llm_factory.py    # standalone LLMFactory/OpenRouter verification script
+│   │   ├── test_models.py             # standalone DB model verification script
+│   │   ├── test_persona.py            # standalone persona/prompt-builder verification script
+│   │   ├── test_llm_provider.py       # standalone LLMProvider/Gemini verification script
+│   │   ├── test_llm_factory.py        # standalone LLMFactory/OpenRouter verification script
+│   │   └── test_init_llm_wiring.py    # standalone /init + LLM-generation verification script
 │   ├── requirements.txt
 │   └── .env.example
 ├── frontend/
@@ -207,6 +208,41 @@ smoke test; otherwise that step is skipped with an explicit message,
 same pattern as Stage 6. Not wired into `/init` or any route yet —
 that's Stage 8, which is the first place callers actually use
 `get_llm_provider()` instead of instantiating a concrete provider.
+
+## Verifying Wire LLM into Init (Stage 8)
+
+```bash
+cd backend
+python -m scripts.test_init_llm_wiring
+```
+
+This uses an in-memory SQLite DB and a fake `LLMProvider` (no network,
+no real API key needed) to confirm `get_or_create_agent()` now
+generates a `persona_description` on creation — building the
+voice-profile prompt via `persona_service.build_voice_profile_prompt()`
+and sending it through `get_llm_provider().generate()` — and confirms
+the LLM is called exactly once even across repeat `/init` calls
+(idempotency from Stage 4 still holds). It then separately calls
+`agent_service._generate_persona_description()` against whatever
+provider is actually configured to confirm the graceful-fallback path:
+if no real API key is set (the default in this sandboxed environment),
+`persona_description` comes back `None` instead of the request
+failing — `/init` still succeeds and returns the agent with its
+`persona_name` set correctly either way.
+
+```bash
+cd backend
+cp .env.example .env
+pip install -r requirements.txt
+uvicorn app.main:app --reload --port 8000
+```
+
+```bash
+curl -X POST http://localhost:8000/api/agent/init
+# {"agentId":"<uuid>","status":"initializing","personaName":"Aether","personaDescription":null,"createdAt":"..."}
+# (personaDescription is populated instead of null if a real
+# GEMINI_API_KEY/OPENROUTER_API_KEY is set in backend/.env)
+```
 
 ## Required Environment Variables
 

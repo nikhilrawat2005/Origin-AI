@@ -216,3 +216,44 @@ as Stage 6's Gemini test. Re-ran `scripts/test_llm_provider.py`
 - `README.md`
 **Commit:** `feat(backend): add LLMFactory and OpenRouter provider for env-driven LLM switching`
 **Prompt File:** `docs/prompts/08_stage7.md`
+
+---
+
+### Stage 8
+**Date:** 2026-08-07
+**AI Tool Used:** Claude (Sonnet 5)
+**Objective:** Wire LLM into Init
+**Summary:** `POST /api/agent/init` now does real work on first call.
+`agent_service.get_or_create_agent()` sets `persona_name` from
+`persona_service.get_persona_name()` (the persona bible, not the bare
+model default) and, on creation only, calls
+`_generate_persona_description()` — builds the voice-profile prompt
+via `persona_service.build_voice_profile_prompt()` and sends it as the
+`system` prompt to `get_llm_provider().generate()` (Stage 7's
+factory), asking for a short landing-page-style bio. The LLM call is
+wrapped in a broad try/except that logs a warning and returns `None`
+on any failure — no real API key is available in this sandboxed
+environment, and `/init` must still succeed and create the agent row
+even without a live LLM, since blocking agent creation on an optional
+enrichment call would violate the "evaluator calls init exactly once
+and it must work" contract. Idempotency from Stage 4 is preserved:
+generation only runs inside the `if existing is not None: return`
+branch's else-path (i.e., only on the very first call), so repeat
+`/init` calls never re-trigger an LLM call. `AgentInitResponse` gained
+`personaDescription: str | None`. Verified with
+`scripts/test_init_llm_wiring.py` against an in-memory SQLite DB and a
+fake `LLMProvider`: confirms a new agent gets the correct
+`persona_name` and the fake provider's generated description, confirms
+the LLM is called exactly once even across a repeat `get_or_create_agent()`
+call, and separately confirms the real graceful-fallback path (no
+configured API key in this environment) still succeeds with
+`persona_description=None`. Re-ran `scripts/test_llm_provider.py` and
+`scripts/test_llm_factory.py` (Stages 6/7) to confirm no regressions.
+**Files Changed:**
+- `backend/app/services/agent_service.py`
+- `backend/app/schemas/agent.py`
+- `backend/app/routes/agent.py`
+- `backend/scripts/test_init_llm_wiring.py`
+- `README.md`
+**Commit:** `feat(backend): generate persona description via LLM on agent init`
+**Prompt File:** `docs/prompts/09_stage8.md`
