@@ -125,10 +125,12 @@ def _parse_post_response(raw: str) -> tuple[str, str, str]:
         raise PostWriteError("Post generation returned an empty response.")
 
     text = raw.strip()
+    # Strip markdown bolding (e.g. **TITLE:** or **RATIONALE:**) if LLM wraps markers in markdown
+    clean_text = text.replace("**", "").strip()
 
-    title_idx = text.find(_TITLE_MARKER)
-    rationale_idx = text.find(_RATIONALE_MARKER)
-    content_idx = text.find(_CONTENT_MARKER)
+    title_idx = clean_text.find(_TITLE_MARKER)
+    rationale_idx = clean_text.find(_RATIONALE_MARKER)
+    content_idx = clean_text.find(_CONTENT_MARKER)
 
     if title_idx == -1 or rationale_idx == -1 or content_idx == -1:
         raise PostWriteError(
@@ -139,9 +141,9 @@ def _parse_post_response(raw: str) -> tuple[str, str, str]:
             f"Post response sections out of order: {text[:200]!r}"
         )
 
-    title = text[title_idx + len(_TITLE_MARKER):rationale_idx].strip()
-    rationale = text[rationale_idx + len(_RATIONALE_MARKER):content_idx].strip()
-    content = text[content_idx + len(_CONTENT_MARKER):].strip()
+    title = clean_text[title_idx + len(_TITLE_MARKER):rationale_idx].strip()
+    rationale = clean_text[rationale_idx + len(_RATIONALE_MARKER):content_idx].strip()
+    content = clean_text[content_idx + len(_CONTENT_MARKER):].strip()
 
     if not title:
         raise PostWriteError("Post response had an empty TITLE section.")

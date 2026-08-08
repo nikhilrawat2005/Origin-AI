@@ -1,14 +1,30 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
-import { initAgent, type AgentInitResponse } from "./lib/api";
+import { useEffect, useState } from "react";
+import { getFeed, initAgent, type AgentInitResponse } from "./lib/api";
 
 type LoadState = "idle" | "loading" | "error";
 
 export default function LandingPage() {
   const [agent, setAgent] = useState<AgentInitResponse | null>(null);
   const [loadState, setLoadState] = useState<LoadState>("idle");
+
+  useEffect(() => {
+    // On mount, check if agent is already active by checking feed/backend
+    async function checkStatus() {
+      try {
+        const feed = await getFeed();
+        // If feed endpoint responds fine, agent exists or backend is initialized
+        if (feed) {
+          setAgent({ agentId: "active" });
+        }
+      } catch {
+        // Backend not initialized or down
+      }
+    }
+    checkStatus();
+  }, []);
 
   async function handleInitialize() {
     setLoadState("loading");
