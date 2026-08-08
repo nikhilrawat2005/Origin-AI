@@ -122,18 +122,22 @@ def _create_breeth_namespace(db: Session, agent: Agent) -> str:
     return group_id
 
 
-def get_or_create_agent(db: Session) -> Agent:
+def get_or_create_agent(db: Session, persona_name: str | None = None) -> Agent:
     """Return the existing agent if one exists, else create one,
     generate its persona description via the LLM, and establish its
     Breeth namespace.
 
-    persona_name comes from persona.json (Stage 5's persona bible)
-    rather than the model's bare default, so a new agent is named
-    correctly even before any LLM call succeeds. persona_description
-    is LLM-generated on creation only; breeth_agent_ref is set on
-    creation only, right after, once the row has an id to derive the
-    namespace from. status stays "initializing" until Stage 18 flips
-    it to "active" once the scheduler is running.
+    `persona_name`, when passed (from the evaluator's optional
+    `POST /api/agent/init` body, `{"persona": {"name", "domain"}}`),
+    overrides persona.json's default name for this agent. Persona
+    identity is otherwise frozen from persona.json (Stage 5's persona
+    bible) rather than the model's bare default, so a new agent is
+    named and voiced correctly even before any LLM call succeeds.
+    persona_description is LLM-generated on creation only;
+    breeth_agent_ref is set on creation only, right after, once the
+    row has an id to derive the namespace from. status stays
+    "initializing" until Stage 18 flips it to "active" once the
+    scheduler is running.
     """
     existing = (
         db.query(Agent).order_by(Agent.created_at.desc()).first()
@@ -141,7 +145,7 @@ def get_or_create_agent(db: Session) -> Agent:
     if existing is not None:
         return existing
 
-    agent = Agent(persona_name=get_persona_name())
+    agent = Agent(persona_name=persona_name or get_persona_name())
     agent.persona_description = _generate_persona_description()
     db.add(agent)
     db.commit()

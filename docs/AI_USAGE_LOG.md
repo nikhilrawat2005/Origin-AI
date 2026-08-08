@@ -757,3 +757,65 @@ sandbox could do those itself.
 - `PROJECT_STATUS.md`
 **Commit:** `chore: release candidate — Railway deploy configs, API contract doc + check, full regression pass, deployment guide`
 **Prompt File:** `docs/prompts/21_stage20.md`
+
+---
+
+## Post-Stage-20 — Evaluator Contract Audit Fixes
+
+**Prompt:** User-supplied Hinglish audit checklist covering: exact
+feed/init API contract, OpenRouter-as-primary LLM, Breeth+SQLite
+fallback verification, scheduler/persona/topic-source checks, editorial
+rejection storage, `.env.example` cleanup, secrets hygiene, and a new
+`docs/PROJECT_STATE.md` resume file.
+
+**AI Response/Summary:** Audited each item against the actual Stage 20
+codebase. Several items (Breeth/SQLite fallback design, editorial
+rejection storage, scheduler chain, live topic sources, persona
+definition) were already correctly implemented from earlier stages and
+needed no code change. The API contract, however, did not match the
+evaluator's exact shape — `/init` returned several extra fields beyond
+`agentId`, and `/feed` used `content`/`title` instead of `text` and
+wrapped posts in agent-identity fields. Fixed those, switched the
+default LLM provider to OpenRouter (Gemini kept as optional fallback,
+never mandatory), tightened `.env.example` to only variables
+`core/config.py` actually reads, added a missing `backend/.gitignore`,
+and updated the frontend and docs to match.
+
+**What We Used:** Direct file edits against the existing Stage 20
+codebase; no new architecture introduced.
+
+**What We Changed:**
+- `POST /api/agent/init` now returns only `{"agentId": "..."}` and
+  accepts an optional `{"persona": {"name","domain"}}` body.
+- `GET /api/agent/feed` now returns only `{"posts": [...]}`, each post
+  with exactly `id`, `createdAt` (ISO 8601 UTC, `Z` suffix), `text`,
+  `rationale`, `sources`.
+- `LLM_PROVIDER` default changed from `gemini` to `openrouter`.
+- `PUBLISH_INTERVAL_MINUTES` default changed from `60` to `30`.
+- `.env.example` cleaned to only variables actually read.
+- Frontend (`lib/api.ts`, `page.tsx`, `feed/page.tsx`) updated to the
+  new response shapes.
+- `docs/API_CONTRACT.md` rewritten to the new frozen contract.
+- `docs/PROJECT_STATE.md` added.
+- `backend/.gitignore` added.
+
+**Files Changed:**
+- `backend/app/schemas/agent.py`
+- `backend/app/routes/agent.py`
+- `backend/app/services/agent_service.py`
+- `backend/app/core/config.py`
+- `backend/.env.example`
+- `backend/.gitignore` (new)
+- `backend/scripts/test_api_contract.py`
+- `backend/scripts/test_feed_endpoint.py`
+- `backend/scripts/test_llm_factory.py`
+- `frontend/app/lib/api.ts`
+- `frontend/app/page.tsx`
+- `frontend/app/feed/page.tsx`
+- `docs/API_CONTRACT.md`
+- `docs/DEPLOYMENT.md`
+- `docs/PROJECT_STATE.md` (new)
+- `PROJECT_STATUS.md`
+- `README.md`
+
+**Commit:** `fix: lock API to exact evaluator contract, OpenRouter as primary LLM, env cleanup, add PROJECT_STATE.md`

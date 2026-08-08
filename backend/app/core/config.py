@@ -11,25 +11,28 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 class Settings(BaseSettings):
     # --- Core ---
-    app_env: str = "development"
+    app_env: str = "production"
     port: int = 8000
 
     # --- Database ---
     database_url: str = "sqlite:///./aether.db"
 
     # --- LLM Provider(s) ---
-    gemini_api_key: str = ""
-    gemini_model: str = "gemini-2.5-flash"
+    # OpenRouter is primary (a real key is available for it). Gemini
+    # remains supported as an optional fallback provider but is never
+    # required — LLM_PROVIDER defaults to openrouter.
+    llm_provider: str = "openrouter"
     openrouter_api_key: str = ""
     openrouter_model: str = "openai/gpt-4o-mini"
-    llm_provider: str = "gemini"  # provider abstraction switch (Stage 6/7)
+    gemini_api_key: str = ""
+    gemini_model: str = "gemini-2.5-flash"
 
     # --- Memory (Breeth) ---
     breeth_api_key: str = ""
     breeth_base_url: str = "https://api.thebreeth.com"
 
-    # --- Scheduler (wired in Stage 18) ---
-    publish_interval_minutes: int = 60
+    # --- Scheduler ---
+    publish_interval_minutes: int = 30
 
     model_config = SettingsConfigDict(
         env_file=".env",

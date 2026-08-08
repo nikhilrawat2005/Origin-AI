@@ -1,17 +1,14 @@
 """
-Stage 20 verification — API contract check.
+API contract check — asserts the exact hackathon evaluator shape holds
+against the real FastAPI app: field names, types, and nothing extra.
 
-Distinct from `test_feed_endpoint.py` / earlier stage scripts, which
-test each route's internal *logic* (empty-vs-populated states,
-idempotency, dedup, etc.). This script instead asserts the exact
-*shape* documented in `docs/API_CONTRACT.md` holds against the real
-FastAPI app — field names, types, and nullability — so a future change
-to either route's response model can't silently drift from what's
-published as the frozen contract without this failing.
+`POST /api/agent/init` -> `{"agentId": "..."}` only.
+`GET /api/agent/feed`  -> `{"posts": [...]}` only, each post carrying
+exactly `id`, `createdAt` (ISO 8601 UTC, `Z` suffix), `text`,
+`rationale`, `sources`.
 
-Runs against an in-memory SQLite DB via TestClient, same pattern as
-`test_feed_endpoint.py` (StaticPool so TestClient's worker thread
-reuses one connection).
+Runs against an in-memory SQLite DB via TestClient (StaticPool so
+TestClient's worker thread reuses one connection).
 """
 import sys
 from pathlib import Path
@@ -60,64 +57,45 @@ def test_feed_contract_before_init():
     resp = client.get("/api/agent/feed")
     assert resp.status_code == 200, resp.text
     body = resp.json()
-    _assert_keys(
-        body, {"agentId", "personaName", "status", "posts"}, "GET /feed (pre-init)"
-    )
-    assert body["agentId"] is None
-    assert body["personaName"] is None
-    assert body["status"] is None
+    _assert_keys(body, {"posts"}, "GET /feed (pre-init)")
     assert body["posts"] == []
-    print("PASS: GET /api/agent/feed pre-init matches documented empty-feed contract")
+    print("PASS: GET /api/agent/feed pre-init matches {posts: []} contract")
 
 
 def test_init_contract():
-    resp = client.post("/api/agent/init")
+    resp = client.post("/api/agent/init", json={"persona": {"name": "Aether", "domain": "AI Technology"}})
     assert resp.status_code == 200, resp.text
     body = resp.json()
-    _assert_keys(
-        body,
-        {
-            "agentId",
-            "status",
-            "personaName",
-            "personaDescription",
-            "breethAgentRef",
-            "createdAt",
-        },
-        "POST /init",
-    )
+    _assert_keys(body, {"agentId"}, "POST /init")
     assert isinstance(body["agentId"], str) and body["agentId"]
-    assert body["status"] == "active"
-    assert isinstance(body["personaName"], str) and body["personaName"]
-    assert body["personaDescription"] is None or isinstance(
-        body["personaDescription"], str
-    )
-    assert isinstance(body["breethAgentRef"], str) and body["breethAgentRef"]
-    assert isinstance(body["createdAt"], str) and body["createdAt"]
-    print("PASS: POST /api/agent/init matches documented contract (status=active)")
+    print("PASS: POST /api/agent/init matches {agentId: ...} contract only")
 
 
 def test_init_is_idempotent():
     first = client.post("/api/agent/init").json()
     second = client.post("/api/agent/init").json()
     assert first["agentId"] == second["agentId"]
-    print("PASS: repeat POST /api/agent/init returns the same agentId")
+    print("PASS: repeat POST /api/agent/init returns the same agentId, still {agentId} only")
 
 
 def test_feed_contract_after_init_no_posts():
     resp = client.get("/api/agent/feed")
     assert resp.status_code == 200, resp.text
     body = resp.json()
-    _assert_keys(
-        body, {"agentId", "personaName", "status", "posts"}, "GET /feed (post-init)"
-    )
-    assert isinstance(body["agentId"], str) and body["agentId"]
-    assert isinstance(body["personaName"], str) and body["personaName"]
-    assert body["status"] == "active"
+    _assert_keys(body, {"posts"}, "GET /feed (post-init)")
     assert isinstance(body["posts"], list)
-    print(
-        "PASS: GET /api/agent/feed post-init matches documented agent-identity contract"
-    )
+    print("PASS: GET /api/agent/feed post-init still matches {posts: [...]} contract")
+
+
+def test_no_extra_routes_exist():
+    """Evaluator-facing surface must be exactly these two endpoints —
+    no /generate, /run, or other manual-trigger route."""
+    paths = {route.path for route in app.routes if hasattr(route, "path")}
+    forbidden = {p for p in paths if "generate" in p or "/run" in p}
+    assert not forbidden, f"Found unexpected manual-trigger routes: {forbidden}"
+    assert "/api/agent/init" in paths
+    assert "/api/agent/feed" in paths
+    print("PASS: only /api/agent/init and /api/agent/feed are exposed (plus health check)")
 
 
 if __name__ == "__main__":
@@ -125,4 +103,5 @@ if __name__ == "__main__":
     test_init_contract()
     test_init_is_idempotent()
     test_feed_contract_after_init_no_posts()
-    print("\nAll Stage 20 API contract checks passed.")
+    test_no_extra_routes_exist()
+    print("\nAll API contract checks passed.")

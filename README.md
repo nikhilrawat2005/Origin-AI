@@ -732,16 +732,23 @@ shapes of both public endpoints.
 
 See `backend/.env.example`:
 
-- `GEMINI_API_KEY`
-- `GEMINI_MODEL` (defaults to `gemini-2.5-flash`)
+- `LLM_PROVIDER` (`openrouter` or `gemini`, defaults to `openrouter` — OpenRouter is primary)
 - `OPENROUTER_API_KEY`
 - `OPENROUTER_MODEL` (defaults to `openai/gpt-4o-mini`)
-- `LLM_PROVIDER` (`gemini` or `openrouter`, defaults to `gemini`)
+- `GEMINI_API_KEY` (optional fallback provider only)
+- `GEMINI_MODEL` (defaults to `gemini-2.5-flash`)
 - `BREETH_API_KEY`
 - `BREETH_BASE_URL` (defaults to `https://api.thebreeth.com`)
 - `DATABASE_URL`
 - `APP_ENV`
 - `PORT`
+- `PUBLISH_INTERVAL_MINUTES` (defaults to `30`)
+
+> Note: `POST /api/agent/init` and `GET /api/agent/feed` now return
+> only `{"agentId": "..."}` and `{"posts": [...]}` respectively (see
+> `docs/API_CONTRACT.md` for the current frozen contract) — some
+> curl examples earlier in this file show an older response shape
+> from mid-build stages and are kept for historical build-log context.
 
 See `frontend/.env.local.example`:
 

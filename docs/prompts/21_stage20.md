@@ -145,3 +145,87 @@ None planned — the 20-stage plan is complete. Any further work (a real
 Railway deployment by the repo owner, live keys, or a genuinely new
 feature request) would be its own separate task, not a continuation of
 this numbered plan.
+
+---
+
+## Addendum — Evaluator Contract Audit Fixes
+
+A follow-up review of the delivered Stage 20 ZIP against the exact
+hackathon evaluator contract, done in the same conversation as a
+closing hardening pass rather than as a new numbered stage.
+
+### Prompt(s)
+
+User uploaded `aether-stage20.zip` and pasted a Hinglish audit
+checklist reviewing the delivered build. MUST FIX items: exact
+`/api/agent/feed` JSON shape (`text` not `content`, no wrapping `agent`
+object, ISO 8601 `createdAt`, empty feed as `{"posts":[]}`); exact
+`/api/agent/init` response (`{"agentId":"..."}` only); OpenRouter as
+primary LLM provider with Gemini as an optional, non-mandatory
+fallback; confirm the Breeth-primary/SQLite-fallback memory design;
+confirm the autonomous scheduler chain and that no `/generate`/`/run`
+endpoint exists; confirm `PUBLISH_INTERVAL_MINUTES` is configurable;
+confirm live topic sources with preserved source URLs; confirm
+editorial rejections are actually stored with a reason; confirm the
+persona is frozen. Strongly recommended: don't fake-compress the real
+20-stage history, keep `AI_USAGE_LOG.md` honest, add
+`docs/PROJECT_STATE.md`, clean `.env.example` to only variables
+actually used, and verify secrets never reach GitHub.
+
+### AI Response Summary
+
+Checked each item against the real Stage 20 code rather than assuming
+anything was still broken:
+
+- Confirmed the memory fallback design, scheduler chain (no manual
+  trigger route), rejected-topic storage, live topic sources, and
+  frozen persona were all already correct from earlier stages — no
+  code changes needed for these, verification only.
+- Found `/init` and `/feed` genuinely did not match the evaluator's
+  exact contract (extra fields on `/init`; `content`/`title` instead
+  of `text`, and a wrapping identity object, on `/feed`). Rewrote
+  `schemas/agent.py` and `routes/agent.py` to the exact shape, added
+  an optional `{"persona": {"name","domain"}}` request body to
+  `/init`, and forced `createdAt` to ISO 8601 UTC with a `Z` suffix via
+  a Pydantic `field_serializer`. Updated the frontend
+  (`lib/api.ts`/`page.tsx`/`feed/page.tsx`) to match.
+- Flipped the default `LLM_PROVIDER` from `gemini` to `openrouter` in
+  `core/config.py`; Gemini provider code and env vars stay in place as
+  an explicit, non-mandatory fallback.
+- Added `docs/PROJECT_STATE.md` (new file) and `backend/.gitignore`
+  (new file — the backend had none, only the frontend did).
+- Cleaned `backend/.env.example` down to exactly the variables
+  `core/config.py` reads.
+- Updated `scripts/test_api_contract.py` and
+  `scripts/test_feed_endpoint.py` to assert the new exact shapes, and
+  a small default-provider assertion in `scripts/test_llm_factory.py`.
+  Re-ran all 17 backend verification scripts plus a real
+  `npm run build` on the frontend — zero regressions.
+- Updated `docs/API_CONTRACT.md`, `PROJECT_STATUS.md`'s tech-stack
+  line, and the minimum necessary lines of `README.md`/
+  `docs/DEPLOYMENT.md` (env var lists, example output) rather than
+  rewriting either wholesale.
+
+### Files Changed
+- `backend/app/schemas/agent.py`
+- `backend/app/routes/agent.py`
+- `backend/app/services/agent_service.py`
+- `backend/app/core/config.py`
+- `backend/.env.example`
+- `backend/.gitignore` (new)
+- `backend/scripts/test_api_contract.py`
+- `backend/scripts/test_feed_endpoint.py`
+- `backend/scripts/test_llm_factory.py`
+- `frontend/app/lib/api.ts`
+- `frontend/app/page.tsx`
+- `frontend/app/feed/page.tsx`
+- `docs/API_CONTRACT.md`
+- `docs/DEPLOYMENT.md`
+- `docs/PROJECT_STATE.md` (new)
+- `PROJECT_STATUS.md`
+- `README.md`
+
+### Commit
+```
+fix: lock API to exact evaluator contract, OpenRouter as primary LLM, env cleanup, add PROJECT_STATE.md
+```

@@ -41,14 +41,14 @@ git push -u origin main
    ```
    APP_ENV=production
    DATABASE_URL=sqlite:///./aether.db
-   GEMINI_API_KEY=<your real key>
-   GEMINI_MODEL=gemini-2.5-flash
-   OPENROUTER_API_KEY=<optional, only if LLM_PROVIDER=openrouter>
+   LLM_PROVIDER=openrouter
+   OPENROUTER_API_KEY=<your real key>
    OPENROUTER_MODEL=openai/gpt-4o-mini
-   LLM_PROVIDER=gemini
+   GEMINI_API_KEY=<optional, only if LLM_PROVIDER=gemini>
+   GEMINI_MODEL=gemini-2.5-flash
    BREETH_API_KEY=<your real key>
    BREETH_BASE_URL=https://api.thebreeth.com
-   PUBLISH_INTERVAL_MINUTES=60
+   PUBLISH_INTERVAL_MINUTES=30
    ```
    (`PORT` is injected by Railway automatically — don't set it
    yourself.)

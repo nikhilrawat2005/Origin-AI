@@ -24,8 +24,7 @@ function PostCard({ post }: { post: FeedPost }) {
       <p style={{ margin: "0 0 4px", color: "var(--muted)", fontSize: 13 }}>
         {formatCreatedAt(post.createdAt)}
       </p>
-      <h2 style={{ margin: "0 0 12px" }}>{post.title}</h2>
-      <p style={{ lineHeight: 1.6, whiteSpace: "pre-wrap" }}>{post.content}</p>
+      <p style={{ lineHeight: 1.6, whiteSpace: "pre-wrap" }}>{post.text}</p>
 
       <div
         style={{

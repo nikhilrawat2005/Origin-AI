@@ -1,0 +1,19 @@
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+.venv/
+venv/
+env/
+
+# Secrets — never commit real env values, only .env.example
+.env
+.env.*
+!.env.example
+
+# Local SQLite DB
+*.db
+*.sqlite
+*.sqlite3
+
+.DS_Store

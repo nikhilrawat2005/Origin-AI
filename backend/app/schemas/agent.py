@@ -1,61 +1,68 @@
 """
-Response schema(s) for the agent endpoints.
+Response schema(s) for the agent endpoints — locked to the exact
+hackathon evaluator contract.
 
-Stage 8 added `personaDescription` once `/init` started generating one
-via the LLM. Stage 10 adds `breethAgentRef` now that `/init` also
-establishes the agent's Breeth namespace (agent_service.
-_create_breeth_namespace) — always populated on creation, since the
-group_id is locally derived rather than something Breeth returns (see
-that function's docstring for why it's set even when the underlying
-remote write fails). Stage 19 adds `FeedPost`/`FeedResponse` for
-`GET /api/agent/feed` — this is the "exact PRD JSON shape" referenced
-in `routes/agent.py`: the PRD's Feed Page needs exactly "Generated
-Posts, Created Time, Rationale, Sources" (PROJECT_STATUS.md §4), so
-`FeedPost` carries precisely those fields (plus `id`/`title` so the
-frontend has something to key/render on) and nothing else — no author,
-no tags, no engagement metrics, matching §2's explicit out-of-scope
-list. `sources` is typed `list[str]` here even though `Post.sources`
-is stored as a JSON string column — the route is responsible for the
-`json.loads()` conversion so this schema stays a clean, JSON-native
-contract for the frontend.
+`POST /api/agent/init` returns ONLY `{"agentId": "..."}`. Nothing else.
+The evaluator's contract test posts a persona payload and reads back a
+single `agentId` field — any extra field (status, personaName, etc.)
+is harmless to a strict-equality evaluator but is explicitly out of
+scope per the "no unnecessary fields on evaluator-facing APIs"
+requirement, so this schema carries only `agentId`.
+
+`GET /api/agent/feed` returns ONLY `{"posts": [...]}`, each post
+carrying exactly `id`, `createdAt` (ISO 8601 UTC), `text`, `rationale`,
+`sources` — no wrapping `agent` object, no `title`, no `content` key.
+`content` was renamed to `text` to match the contract literally; the
+underlying `Post.content` column is unchanged, this schema just maps
+it to the field name the evaluator expects.
 """
-from datetime import datetime
+from datetime import datetime, timezone
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, field_serializer
+
+
+class AgentInitRequest(BaseModel):
+    """Optional persona override on init — `{"persona": {"name", "domain"}}`.
+    Not required; if omitted, the persona.json defaults apply."""
+
+    class Persona(BaseModel):
+        name: str | None = None
+        domain: str | None = None
+
+    persona: Persona | None = None
 
 
 class AgentInitResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     agentId: str
-    status: str
-    personaName: str
-    personaDescription: str | None = None
-    breethAgentRef: str | None = None
-    createdAt: datetime
 
 
 class FeedPost(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: str
-    title: str
-    content: str
+    createdAt: datetime
+    text: str
     rationale: str
     sources: list[str]
-    createdAt: datetime
+
+    @field_serializer("createdAt")
+    def _serialize_created_at(self, value: datetime) -> str:
+        """Always emit ISO 8601 UTC with a literal `Z` suffix (the
+        exact contract shape: "2026-08-07T10:30:00Z"), regardless of
+        whether the stored datetime is naive or already tz-aware."""
+        if value.tzinfo is None:
+            value = value.replace(tzinfo=timezone.utc)
+        else:
+            value = value.astimezone(timezone.utc)
+        return value.strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
 class FeedResponse(BaseModel):
-    """Whole-feed response: identifies which agent/persona the posts
-    belong to (the Landing page's "Agent Status" and Feed page's
-    header both need this) plus the posts themselves, newest first —
-    matching how a reader expects a feed to read top-to-bottom.
-    """
+    """Whole-feed response — posts only, newest first, per the exact
+    hackathon contract. No wrapping `agent` object."""
 
     model_config = ConfigDict(from_attributes=True)
 
-    agentId: str | None = None
-    personaName: str | None = None
-    status: str | None = None
     posts: list[FeedPost] = []

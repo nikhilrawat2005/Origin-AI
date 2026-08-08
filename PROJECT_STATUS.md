@@ -40,7 +40,7 @@ multi-agent architecture. If it's not in the PRD, don't build it.
 | Backend | FastAPI |
 | Database | SQLite (via SQLAlchemy) |
 | Memory | Breeth |
-| LLM | Gemini, behind a provider abstraction (swappable) |
+| LLM | OpenRouter (primary), behind a provider abstraction; Gemini available as optional fallback |
 | Scheduler | APScheduler |
 | Deployment | Railway |
 

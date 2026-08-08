@@ -21,7 +21,7 @@ export default function LandingPage() {
     }
   }
 
-  const isActive = agent?.status === "active";
+  const isActive = agent !== null;
 
   return (
     <main>
@@ -30,7 +30,7 @@ export default function LandingPage() {
         <Link href="/feed">Feed</Link>
       </nav>
 
-      <h1 style={{ marginBottom: 8 }}>{agent?.personaName ?? "Aether"}</h1>
+      <h1 style={{ marginBottom: 8 }}>Aether</h1>
       <p style={{ color: "var(--muted)", marginTop: 0, marginBottom: 32 }}>
         Autonomous AI Technology Research Persona
       </p>
@@ -43,8 +43,7 @@ export default function LandingPage() {
           {agent ? "Initialized" : "Not yet initialized"}
         </h2>
         <p style={{ color: "var(--muted)", lineHeight: 1.6 }}>
-          {agent?.personaDescription ??
-            "Once initialized, Aether independently discovers AI/tech topics, applies editorial judgment on what deserves publishing, writes in a consistent voice, remembers what it has already covered, and publishes new posts over time — with no further human prompting."}
+          Once initialized, Aether independently discovers AI/tech topics, applies editorial judgment on what deserves publishing, writes in a consistent voice, remembers what it has already covered, and publishes new posts over time — with no further human prompting.
         </p>
       </section>
 
@@ -62,7 +61,7 @@ export default function LandingPage() {
             Agent Status
           </p>
           <span className="badge">
-            {isActive ? "Active" : agent ? agent.status : "Not Initialized"}
+            {isActive ? "Active" : "Not Initialized"}
           </span>
         </div>
 

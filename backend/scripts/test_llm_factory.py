@@ -8,9 +8,10 @@ Checks:
    reports name == "openrouter".
 2. Calling OpenRouterProvider without an API key raises a clear
    OpenRouterConfigError.
-3. get_llm_provider() returns a GeminiProvider when LLM_PROVIDER=gemini
-   (the settings default) and an OpenRouterProvider when explicitly
-   asked for "openrouter" — proving the factory actually switches.
+3. get_llm_provider() returns an OpenRouterProvider when
+   LLM_PROVIDER=openrouter (the settings default, OpenRouter being
+   primary) and a GeminiProvider when explicitly asked for "gemini"
+   (optional fallback) — proving the factory actually switches.
 4. get_llm_provider() raises UnknownLLMProviderError for a bogus
    provider name instead of silently defaulting to something.
 5. If OPENROUTER_API_KEY is set in the environment, makes one real
@@ -53,20 +54,20 @@ def main() -> None:
 
     print("3. Confirming get_llm_provider() switches on provider name...")
     settings = get_settings()
-    assert settings.llm_provider == "gemini", (
-        "expected default LLM_PROVIDER=gemini in .env/.env.example"
+    assert settings.llm_provider == "openrouter", (
+        "expected default LLM_PROVIDER=openrouter in .env/.env.example (OpenRouter is primary)"
     )
     default_provider = get_llm_provider()
-    assert isinstance(default_provider, GeminiProvider)
-    print("   OK — default (LLM_PROVIDER=gemini) resolves to GeminiProvider")
+    assert isinstance(default_provider, OpenRouterProvider)
+    print("   OK — default (LLM_PROVIDER=openrouter) resolves to OpenRouterProvider")
 
     explicit_openrouter = get_llm_provider("openrouter")
     assert isinstance(explicit_openrouter, OpenRouterProvider)
     print("   OK — get_llm_provider('openrouter') resolves to OpenRouterProvider")
 
-    explicit_gemini = get_llm_provider("GEMINI")  # case-insensitivity check
+    explicit_gemini = get_llm_provider("GEMINI")  # case-insensitivity check, optional fallback
     assert isinstance(explicit_gemini, GeminiProvider)
-    print("   OK — provider name lookup is case-insensitive")
+    print("   OK — provider name lookup is case-insensitive (gemini remains available as fallback)")
 
     print("4. Confirming an unknown provider name fails loudly...")
     try:

@@ -1,18 +1,18 @@
 """
-Stage 19 verification — GET /api/agent/feed.
+GET /api/agent/feed verification — locked to the exact hackathon
+evaluator contract.
 
 Runs against an in-memory SQLite DB via FastAPI's TestClient, overriding
 `get_db` the same way FastAPI's own docs recommend for tests (no real
 `aether.db` file touched). Confirms:
-1. Before any agent exists, `/feed` returns 200 with an empty feed
-   (`agentId`/`personaName`/`status` all null, `posts: []`) rather than
-   a 404 or 500 — matches the route's documented "no side effects, no
-   agent required" behavior.
-2. With an agent and zero posts, `/feed` returns the agent's identity
-   fields populated but `posts: []`.
-3. With posts, `/feed` returns them newest-first with every field the
-   PRD's Feed Page needs: `id`, `title`, `content`, `rationale`,
-   `sources` (correctly JSON-decoded back into a list), `createdAt`.
+1. Before any agent exists, `/feed` returns 200 with `{"posts": []}`
+   rather than a 404 or 500.
+2. With an agent and zero posts, `/feed` returns `{"posts": []}`.
+3. With posts, `/feed` returns them newest-first with exactly the
+   contract fields: `id`, `createdAt` (ISO 8601 UTC with a `Z`
+   suffix), `text`, `rationale`, `sources` (correctly JSON-decoded
+   back into a list) — no `title`, no `content`, no wrapping `agent`
+   object.
 4. A post with a malformed `sources` string doesn't crash the whole
    feed — it falls back to `[]` for that post only, other posts are
    unaffected.
@@ -35,12 +35,6 @@ from app.models.agent import Agent  # noqa: E402
 from app.models.post import Post  # noqa: E402
 from app.main import app  # noqa: E402
 
-# StaticPool: TestClient calls run in a worker thread, and a bare
-# ":memory:" engine hands each new connection a *fresh* empty DB
-# unless every connection is forced through the same one (same
-# pattern Stage 15/17's own in-memory test fixtures avoid by using a
-# real temp-file DB; StaticPool is the equivalent fix for TestClient
-# specifically, which owns connection lifecycle itself).
 engine = create_engine(
     "sqlite:///:memory:",
     connect_args={"check_same_thread": False},
@@ -66,11 +60,9 @@ def test_empty_feed_before_any_agent():
     resp = client.get("/api/agent/feed")
     assert resp.status_code == 200, resp.text
     body = resp.json()
-    assert body["agentId"] is None
-    assert body["personaName"] is None
-    assert body["status"] is None
+    assert set(body.keys()) == {"posts"}, body.keys()
     assert body["posts"] == []
-    print("PASS: empty feed before any agent exists")
+    print("PASS: empty feed before any agent exists, shape is {posts: []} only")
 
 
 def test_feed_with_agent_no_posts():
@@ -79,17 +71,14 @@ def test_feed_with_agent_no_posts():
     db.add(agent)
     db.commit()
     db.refresh(agent)
-    agent_id = agent.id
     db.close()
 
     resp = client.get("/api/agent/feed")
     assert resp.status_code == 200, resp.text
     body = resp.json()
-    assert body["agentId"] == agent_id
-    assert body["personaName"] == "Aether"
-    assert body["status"] == "active"
+    assert set(body.keys()) == {"posts"}, body.keys()
     assert body["posts"] == []
-    print("PASS: agent with zero posts returns identity + empty posts")
+    print("PASS: agent with zero posts returns {posts: []}")
 
 
 def test_feed_with_posts_newest_first_and_sources_decoded():
@@ -126,11 +115,13 @@ def test_feed_with_posts_newest_first_and_sources_decoded():
 
     resp = client.get("/api/agent/feed")
     assert resp.status_code == 200, resp.text
-    posts = resp.json()["posts"]
+    body = resp.json()
+    assert set(body.keys()) == {"posts"}, body.keys()
+    posts = body["posts"]
     assert len(posts) == 3
 
-    titles = [p["title"] for p in posts]
-    assert titles == ["Malformed Sources Post", "Newer Post", "Older Post"], titles
+    texts = [p["text"] for p in posts]
+    assert texts == ["Still has content.", "Newer content.", "Older content."], texts
 
     newer_post = posts[1]
     assert newer_post["sources"] == [
@@ -138,15 +129,16 @@ def test_feed_with_posts_newest_first_and_sources_decoded():
         "https://example.com/c",
     ]
     assert newer_post["rationale"] == "Newer rationale."
-    assert "id" in newer_post and "createdAt" in newer_post
+    assert set(newer_post.keys()) == {"id", "createdAt", "text", "rationale", "sources"}
+    assert newer_post["createdAt"].endswith("Z")
 
     malformed_post = posts[0]
     assert malformed_post["sources"] == []
-    print("PASS: posts returned newest-first with sources decoded; malformed sources fall back to []")
+    print("PASS: posts returned newest-first with exact contract fields; malformed sources fall back to []")
 
 
 if __name__ == "__main__":
     test_empty_feed_before_any_agent()
     test_feed_with_agent_no_posts()
     test_feed_with_posts_newest_first_and_sources_decoded()
-    print("\nAll Stage 19 feed endpoint checks passed.")
+    print("\nAll feed endpoint contract checks passed.")

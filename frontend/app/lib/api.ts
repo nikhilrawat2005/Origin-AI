@@ -13,26 +13,17 @@ const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
 export type AgentInitResponse = {
   agentId: string;
-  status: string;
-  personaName: string;
-  personaDescription: string | null;
-  breethAgentRef: string | null;
-  createdAt: string;
 };
 
 export type FeedPost = {
   id: string;
-  title: string;
-  content: string;
+  createdAt: string;
+  text: string;
   rationale: string;
   sources: string[];
-  createdAt: string;
 };
 
 export type FeedResponse = {
-  agentId: string | null;
-  personaName: string | null;
-  status: string | null;
   posts: FeedPost[];
 };
 
