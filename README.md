@@ -10,7 +10,7 @@ This is **not** a chatbot and **not** a generic content generator.
 
 ## Project Status
 
-🚧 **Stage 4 of 20 — `POST /api/agent/init` (basic)**
+🚧 **Stage 5 of 20 — Persona Bible + Prompt Builder**
 
 See `docs/AI_USAGE_LOG.md` for full development history and
 `docs/prompts/` for the prompt/decision log of every stage.
@@ -35,18 +35,20 @@ aether/
 │   ├── app/
 │   │   ├── main.py          # FastAPI entrypoint + health check
 │   │   ├── core/
-│   │   │   └── config.py    # env-driven settings (single source of truth)
-│   │   ├── core/
-│   │   │   └── database.py  # SQLAlchemy engine/session, init_db()
+│   │   │   ├── config.py    # env-driven settings (single source of truth)
+│   │   │   ├── database.py  # SQLAlchemy engine/session, init_db()
+│   │   │   └── persona.json # static editorial identity (the "persona bible")
 │   │   ├── routes/
 │   │   │   └── agent.py     # POST /api/agent/init
 │   │   ├── services/
-│   │   │   └── agent_service.py  # get_or_create_agent (single-agent logic)
+│   │   │   ├── agent_service.py    # get_or_create_agent (single-agent logic)
+│   │   │   └── persona_service.py  # loads persona.json, builds voice-profile prompt
 │   │   ├── schemas/
 │   │   │   └── agent.py     # AgentInitResponse
 │   │   └── models/          # agents, posts, rejected_topics, sources_cache
 │   ├── scripts/
-│   │   └── test_models.py   # standalone DB model verification script
+│   │   ├── test_models.py   # standalone DB model verification script
+│   │   └── test_persona.py  # standalone persona/prompt-builder verification script
 │   ├── requirements.txt
 │   └── .env.example
 ├── frontend/
@@ -142,6 +144,22 @@ created here just has the model's defaults (`persona_name="Aether"`,
 The frontend's Initialize button remains disabled — it isn't wired to
 this endpoint yet; that's a later frontend stage once init actually
 does something worth showing.
+
+## Verifying the Persona Bible + Prompt Builder (Stage 5)
+
+```bash
+cd backend
+python -m scripts.test_persona
+```
+
+This loads `app/core/persona.json`, confirms every field the prompt
+builder expects is present, builds the full voice-profile prompt via
+`persona_service.build_voice_profile_prompt()`, and asserts the output
+contains the persona name, a voice trait, and the sample voice line.
+Pure local logic — no database, no network, no LLM call. The voice
+profile isn't wired into `/init` yet; that's Stage 8, once the
+LLMProvider abstraction (Stage 6/7) exists to actually send it
+somewhere.
 
 ## Required Environment Variables
 

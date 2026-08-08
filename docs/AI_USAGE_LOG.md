@@ -110,3 +110,29 @@ responses and exactly one row in `agents` via direct sqlite3 query.
 - `README.md`
 **Commit:** `feat(backend): add POST /api/agent/init with idempotent agent creation`
 **Prompt File:** `docs/prompts/05_stage4.md`
+
+---
+
+### Stage 5
+**Date:** 2026-08-07
+**AI Tool Used:** Claude (Sonnet 5)
+**Objective:** Persona Bible + Prompt Builder
+**Summary:** Added `app/core/persona.json` — Aether's static editorial
+identity: tone, voice traits, editorial values, topics of interest/avoided,
+sourcing standards, writing style rules, and a one-line sample of the
+voice. Added `app/services/persona_service.py`, which loads and caches
+that file and flattens it into a single reusable prompt string via
+`build_voice_profile_prompt()` — plain prose, not raw JSON, since models
+follow written instructions more reliably than a JSON blob asked to be
+"interpreted." No LLM call happens this stage; the prompt is built but
+not sent anywhere yet. Verified with a standalone script
+(`scripts/test_persona.py`) that checks every required field is present
+in the bible and that the generated prompt contains the persona name, a
+voice trait, and the sample voice line.
+**Files Changed:**
+- `backend/app/core/persona.json`
+- `backend/app/services/persona_service.py`
+- `backend/scripts/test_persona.py`
+- `README.md`
+**Commit:** `feat(backend): add persona bible and voice-profile prompt builder`
+**Prompt File:** `docs/prompts/06_stage5.md`
