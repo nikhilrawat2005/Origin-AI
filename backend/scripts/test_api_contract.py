@@ -88,20 +88,32 @@ def test_feed_contract_after_init_no_posts():
 
 
 def test_no_extra_routes_exist():
-    """Evaluator-facing surface must be exactly these two endpoints —
+    """Evaluator-facing surface must be core endpoints —
     no /generate, /run, or other manual-trigger route."""
-    paths = {route.path for route in app.routes if hasattr(route, "path")}
+    paths = set()
+    for r in app.routes:
+        if hasattr(r, "path"):
+            paths.add(r.path)
+        if hasattr(r, "original_router"):
+            for sub_r in r.original_router.routes:
+                if hasattr(sub_r, "path"):
+                    paths.add(sub_r.path)
+
     forbidden = {p for p in paths if "generate" in p or "/run" in p}
     assert not forbidden, f"Found unexpected manual-trigger routes: {forbidden}"
     assert "/api/agent/init" in paths
     assert "/api/agent/feed" in paths
-    print("PASS: only /api/agent/init and /api/agent/feed are exposed (plus health check)")
+    print("PASS: /api/agent/init and /api/agent/feed are exposed with no forbidden routes")
 
 
 if __name__ == "__main__":
-    test_feed_contract_before_init()
-    test_init_contract()
-    test_init_is_idempotent()
-    test_feed_contract_after_init_no_posts()
-    test_no_extra_routes_exist()
-    print("\nAll API contract checks passed.")
+    try:
+        test_feed_contract_before_init()
+        test_init_contract()
+        test_init_is_idempotent()
+        test_feed_contract_after_init_no_posts()
+        test_no_extra_routes_exist()
+        print("\nAll API contract checks passed.")
+    finally:
+        from app.services.scheduler import stop_scheduler
+        stop_scheduler()

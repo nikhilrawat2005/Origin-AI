@@ -129,7 +129,7 @@ def test_feed_with_posts_newest_first_and_sources_decoded():
         "https://example.com/c",
     ]
     assert newer_post["rationale"] == "Newer rationale."
-    assert set(newer_post.keys()) == {"id", "createdAt", "text", "rationale", "sources"}
+    assert set(newer_post.keys()) == {"id", "createdAt", "title", "text", "rationale", "sources"}
     assert newer_post["createdAt"].endswith("Z")
 
     malformed_post = posts[0]

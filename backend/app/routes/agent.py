@@ -62,27 +62,43 @@ def stop_agent(db: Session = Depends(get_db)):
         agent.status = "paused"
         db.commit()
 
-    return {"status": "stopped", "message": "Background publish scheduler paused."}
+    return {"status": "paused", "message": "Background publish scheduler paused."}
+
+
+@router.get("/status")
+def get_status(db: Session = Depends(get_db)):
+    """Return the current agent status (active/paused/not_initialized) and nextRunTime.
+    Used by the frontend to display status and countdown to next cycle.
+    """
+    from app.services.scheduler import get_next_run_time
+    from app.services.topic_discovery import load_topic_sources
+
+    agent = db.query(Agent).order_by(Agent.created_at.desc()).first()
+    sources = [s["name"] for s in load_topic_sources()]
+
+    if agent is None:
+        return {"status": "not_initialized", "agentId": None, "nextRunTime": None, "sources": sources}
+    return {
+        "status": agent.status,
+        "agentId": agent.id,
+        "nextRunTime": get_next_run_time() if agent.status == "active" else None,
+        "sources": sources,
+    }
 
 
 @router.get("/feed", response_model=FeedResponse)
-def get_feed(db: Session = Depends(get_db)):
-    """Return every published post, newest first, as `{"posts": [...]}`.
+def get_feed(agentId: str | None = None, db: Session = Depends(get_db)):
+    """Return published posts, newest first, as `{"posts": [...]}`.
 
-    Before `/init` has ever been called there's no agent row yet, so
-    this returns `{"posts": []}` rather than a 404 or an error — a
-    perfectly valid, renderable empty state, and this endpoint stays
-    side-effect-free (it never creates the agent — only `/init` does).
-    Old posts always remain available; nothing here ever deletes or
-    hides a previously-published post.
-
-    `Post.sources` is stored as a JSON-encoded string column;
-    `json.loads()` here turns it back into the `list[str]`
-    `FeedPost.sources` expects, so a malformed/missing value can't
-    crash the whole feed — an unparseable row just falls back to `[]`
-    for that one post's sources.
+    Accepts an optional `agentId` query parameter matching the PRD specification
+    `GET /api/agent/feed?agentId=abc-123`. If provided, filters by that agentId;
+    otherwise returns posts for the latest agent.
     """
-    agent = db.query(Agent).order_by(Agent.created_at.desc()).first()
+    if agentId:
+        agent = db.query(Agent).filter_by(id=agentId).first()
+    else:
+        agent = db.query(Agent).order_by(Agent.created_at.desc()).first()
+
     if agent is None:
         return FeedResponse(posts=[])
 
@@ -103,6 +119,7 @@ def get_feed(db: Session = Depends(get_db)):
             FeedPost(
                 id=post.id,
                 createdAt=post.created_at,
+                title=post.title or "",
                 text=post.content,
                 rationale=post.rationale,
                 sources=sources,

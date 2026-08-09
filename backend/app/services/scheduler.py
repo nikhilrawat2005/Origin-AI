@@ -76,7 +76,11 @@ from app.services.editorial_judgment import judge_candidates
 from app.services.memory_service import check_memory_batch
 from app.services.post_writer import PostWriteError, write_post
 from app.services.publisher import publish_post
-from app.services.sources_cache_service import discover_new_topics
+from app.services.sources_cache_service import (
+    discover_new_topics,
+    release_rejected_from_cache,
+    release_unaccepted_from_cache,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -111,12 +115,27 @@ def run_publish_cycle(db: Session, agent: Agent) -> int:
         return 0
 
     try:
-        judgments = judge_candidates(db, agent.id, candidates)
+        # Cap judgment at 5 accepted candidates per cycle for fast response & steady batching
+        judgments = judge_candidates(db, agent.id, candidates, max_accepts=5)
     except Exception as exc:  # noqa: BLE001
         logger.error("run_publish_cycle: editorial judgment failed, skipping this cycle: %s", exc)
         return 0
 
     accepted = [j for j in judgments if j.accepted]
+    accepted_urls = {j.candidate.url for j in accepted}
+    unaccepted = [c for c in candidates if c.url not in accepted_urls]
+
+    # Free all unaccepted URLs (both explicitly rejected AND unevaluated candidates
+    # skipped due to max_accepts) from sources_cache so they re-enter the pool next cycle.
+    # Published URLs (accepted below) stay locked for 24h via CACHE_TTL_HOURS.
+    # RejectedTopic fingerprints will fast-reject same-story variants on
+    # re-evaluation with zero LLM calls, so this doesn't cause redundant API spend.
+    if unaccepted:
+        try:
+            release_unaccepted_from_cache(db, unaccepted)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("run_publish_cycle: cache release failed (non-fatal): %s", exc)
+
     if not accepted:
         logger.info(
             "run_publish_cycle: %d candidate(s) discovered, none accepted.",
@@ -236,3 +255,13 @@ def stop_scheduler() -> None:
 def is_running() -> bool:
     """Whether a scheduler is currently active in this process."""
     return _scheduler is not None
+
+
+def get_next_run_time() -> str | None:
+    """Return the ISO timestamp of the next scheduled publish cycle, if scheduler is running."""
+    if _scheduler is None:
+        return None
+    job = _scheduler.get_job(JOB_ID)
+    if job and job.next_run_time:
+        return job.next_run_time.isoformat()
+    return None

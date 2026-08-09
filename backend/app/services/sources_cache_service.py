@@ -23,6 +23,7 @@ re-surfacing the same items forever. Scope is deliberately narrow:
 """
 import hashlib
 import logging
+from datetime import datetime, timedelta, timezone
 
 from sqlalchemy.orm import Session
 
@@ -30,6 +31,20 @@ from app.models.sources_cache import SourceCache
 from app.services.topic_discovery import TopicCandidate, discover_topics
 
 logger = logging.getLogger(__name__)
+
+# Cache entries older than this are treated as expired and re-considered.
+# Keep at 24h so ACCEPTED/published URLs are locked for a full day and
+# are never re-fed into the pipeline. REJECTED URLs are handled
+# differently: `release_rejected_from_cache()` (called by the scheduler
+# after each cycle) immediately deletes their cache rows so they become
+# re-eligible on the very next cycle. This two-tier strategy means:
+#   - Published stories: never re-processed (24h lock).
+#   - Rejected stories: re-eligible next cycle, but `RejectedTopic`
+#     fingerprint fast-rejects them with zero LLM calls — keeping cost
+#     low while keeping the candidate pool from drying up.
+#   - Truly new RSS articles that appeared since the last cycle: always
+#     new to the cache, always fully evaluated.
+CACHE_TTL_HOURS = 24  # Only applies to accepted/published URLs now.
 
 
 def compute_content_hash(candidate: TopicCandidate) -> str:
@@ -48,22 +63,30 @@ def filter_new_candidates(db: Session, candidates: list[TopicCandidate]) -> list
     """Return only the candidates not already present in sources_cache,
     inserting a SourceCache row for each one kept.
 
-    Candidates are deduplicated against the DB one at a time (not a
-    single bulk query) so that two candidates in the *same* batch that
-    happen to hash identically (e.g. a source listing the same item
-    twice) don't both get inserted — the first occurrence claims the
-    hash, the second is skipped against the now-updated in-session
-    state.
+    Entries older than CACHE_TTL_HOURS are treated as expired and
+    re-considered — this ensures the agent continues finding content even
+    when RSS feeds haven't published entirely new articles since the last cycle.
     """
     new_candidates: list[TopicCandidate] = []
+    expiry_cutoff = datetime.now(timezone.utc) - timedelta(hours=CACHE_TTL_HOURS)
 
     for candidate in candidates:
         content_hash = compute_content_hash(candidate)
-        already_seen = (
+        existing = (
             db.query(SourceCache).filter_by(content_hash=content_hash).first()
         )
-        if already_seen is not None:
-            continue
+
+        if existing is not None:
+            # If the cache entry is still fresh, skip this candidate
+            fetched_at = existing.fetched_at
+            # Make naive datetime timezone-aware for comparison
+            if fetched_at.tzinfo is None:
+                fetched_at = fetched_at.replace(tzinfo=timezone.utc)
+            if fetched_at > expiry_cutoff:
+                continue
+            # Entry is expired — delete it so we re-insert with a fresh timestamp
+            db.delete(existing)
+            db.flush()
 
         db.add(
             SourceCache(
@@ -80,13 +103,44 @@ def filter_new_candidates(db: Session, candidates: list[TopicCandidate]) -> list
     return new_candidates
 
 
+def release_unaccepted_from_cache(db: Session, unaccepted_candidates: list[TopicCandidate]) -> int:
+    """Delete sources_cache rows for candidates that were NOT accepted (rejected or skipped due to max_accepts).
+
+    Only ACCEPTED (published) candidates remain locked in sources_cache for 24h.
+    Releasing unaccepted candidates ensures:
+      1. Explicitly rejected candidates are fast-rejected by fingerprint on future runs.
+      2. Unevaluated candidates (skipped when max_accepts was reached) remain in the candidate
+         pool for subsequent scheduler cycles so the agent keeps finding new topics.
+
+    Returns the count of cache rows deleted.
+    """
+    deleted = 0
+    for candidate in unaccepted_candidates:
+        content_hash = compute_content_hash(candidate)
+        existing = db.query(SourceCache).filter_by(content_hash=content_hash).first()
+        if existing is not None:
+            db.delete(existing)
+            deleted += 1
+    db.commit()
+    if deleted:
+        logger.info(
+            "release_unaccepted_from_cache: freed %d unaccepted URL(s) back into the candidate pool.",
+            deleted,
+        )
+    return deleted
+
+
+def release_rejected_from_cache(db: Session, rejected_candidates: list[TopicCandidate]) -> int:
+    """Backwards-compatible alias for `release_unaccepted_from_cache`."""
+    return release_unaccepted_from_cache(db, rejected_candidates)
+
+
 def discover_new_topics(db: Session, sources=None, client=None) -> list[TopicCandidate]:
     """Fetch raw candidates (Stage 11's discover_topics) and return only
     the ones not already cached, caching every new one along the way.
 
-    Not wired into any route or scheduler yet — that's Stage 18, which
-    will call this as the first step in the discovery -> judgment ->
-    memory -> generation -> publish chain.
+    Unaccepted candidates are freed back into the pool after judgment
+    by `release_unaccepted_from_cache()` — called by the scheduler.
     """
     candidates = discover_topics(sources=sources, client=client)
     new_candidates = filter_new_candidates(db, candidates)

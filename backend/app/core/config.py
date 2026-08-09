@@ -32,7 +32,7 @@ class Settings(BaseSettings):
     breeth_base_url: str = "https://api.thebreeth.com"
 
     # --- Scheduler ---
-    publish_interval_minutes: int = 30
+    publish_interval_minutes: int = 10
 
     model_config = SettingsConfigDict(
         env_file=".env",

@@ -3,7 +3,25 @@
     {
       "name": "Hacker News (AI/ML)",
       "type": "hn_algolia",
-      "url": "https://hn.algolia.com/api/v1/search_by_date?tags=story&query=AI%20OR%20LLM%20OR%20machine%20learning",
+      "url": "https://hn.algolia.com/api/v1/search_by_date?tags=story&query=AI%20OR%20LLM%20OR%20machine%20learning&hitsPerPage=50",
+      "category": "industry"
+    },
+    {
+      "name": "Hacker News (Agents/GPT)",
+      "type": "hn_algolia",
+      "url": "https://hn.algolia.com/api/v1/search_by_date?tags=story&query=AI%20agent%20OR%20GPT%20OR%20open%20source%20model&hitsPerPage=50",
+      "category": "industry"
+    },
+    {
+      "name": "Hacker News (OpenAI/Anthropic/DeepMind)",
+      "type": "hn_algolia",
+      "url": "https://hn.algolia.com/api/v1/search_by_date?tags=story&query=OpenAI%20OR%20Anthropic%20OR%20DeepMind%20OR%20Claude&hitsPerPage=50",
+      "category": "industry"
+    },
+    {
+      "name": "Hacker News (Frameworks/vLLM/PyTorch)",
+      "type": "hn_algolia",
+      "url": "https://hn.algolia.com/api/v1/search_by_date?tags=story&query=PyTorch%20OR%20HuggingFace%20OR%20vLLM%20OR%20LangChain&hitsPerPage=50",
       "category": "industry"
     },
     {
@@ -13,9 +31,57 @@
       "category": "research"
     },
     {
+      "name": "arXiv cs.LG (Machine Learning)",
+      "type": "rss",
+      "url": "https://export.arxiv.org/rss/cs.LG",
+      "category": "research"
+    },
+    {
+      "name": "arXiv cs.CL (NLP)",
+      "type": "rss",
+      "url": "https://export.arxiv.org/rss/cs.CL",
+      "category": "research"
+    },
+    {
+      "name": "Reddit r/MachineLearning",
+      "type": "rss",
+      "url": "https://www.reddit.com/r/MachineLearning/new/.rss",
+      "category": "research"
+    },
+    {
+      "name": "Reddit r/LocalLLaMA",
+      "type": "rss",
+      "url": "https://www.reddit.com/r/LocalLLaMA/new/.rss",
+      "category": "industry"
+    },
+    {
       "name": "MIT Technology Review — Artificial Intelligence",
       "type": "rss",
       "url": "https://www.technologyreview.com/topic/artificial-intelligence/feed",
+      "category": "commentary"
+    },
+    {
+      "name": "VentureBeat AI",
+      "type": "rss",
+      "url": "https://venturebeat.com/category/ai/feed",
+      "category": "industry"
+    },
+    {
+      "name": "The Verge AI",
+      "type": "rss",
+      "url": "https://www.theverge.com/rss/ai-artificial-intelligence/index.xml",
+      "category": "commentary"
+    },
+    {
+      "name": "TechCrunch AI",
+      "type": "rss",
+      "url": "https://techcrunch.com/category/artificial-intelligence/feed/",
+      "category": "industry"
+    },
+    {
+      "name": "Ars Technica AI",
+      "type": "rss",
+      "url": "https://feeds.arstechnica.com/arstechnica/technology-lab",
       "category": "commentary"
     }
   ]

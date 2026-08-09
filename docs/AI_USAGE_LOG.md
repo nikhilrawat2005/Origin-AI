@@ -819,3 +819,163 @@ codebase; no new architecture introduced.
 - `README.md`
 
 **Commit:** `fix: lock API to exact evaluator contract, OpenRouter as primary LLM, env cleanup, add PROJECT_STATE.md`
+
+---
+
+## Post-Stage-20 — Runtime Debugging, Railway Observability, and PRD Compliance Fixes
+
+**Prompt:** User request to study backend execution, resolve feed empty issue on Railway, enable stdout logging, fix persona sourcing criteria, add Start/Stop controls to Landing UI, auto-resume background scheduler on app startup, and ensure full compliance with the hackathon rules and API contract.
+
+**AI Response/Summary:** Analyzed backend execution pipeline end-to-end. Configured standard Python logging (`basicConfig`) for Railway observability. Relaxed persona sourcing standards (`persona.json`) to allow Hacker News and ArXiv topics to pass editorial judgment. Fixed `post_writer` parsing to handle markdown bold markers (`**TITLE:**`) cleanly. Implemented `on_startup` auto-resume for the background scheduler in `main.py`. Added `POST /api/agent/stop` endpoint and updated the frontend Landing page UI with Start/Stop agent toggle controls. Added optional `agentId` query parameter filtering to `GET /api/agent/feed` to strictly comply with the PRD evaluator contract (`GET /api/agent/feed?agentId=...`).
+
+**What We Used:** Code analysis, logging setup, regex/string parsing refinements, and FastAPI route/UI enhancements.
+
+**What We Changed:**
+- `backend/app/main.py`: Added stdout `logging.basicConfig(level=logging.INFO)` and `on_startup` auto-resume for active agents.
+- `backend/app/core/persona.json`: Updated sourcing standards to accept Hacker News and ArXiv topics.
+- `backend/app/services/editorial_judgment.py`: Added logging for ACCEPT/REJECT verdicts and markdown-tolerant parsing.
+- `backend/app/services/post_writer.py`: Made `_parse_post_response` tolerant to markdown bolding in section markers.
+- `backend/app/routes/agent.py`: Added `POST /api/agent/stop` endpoint and `agentId` query parameter support in `GET /api/agent/feed`.
+- `frontend/app/lib/api.ts`: Added `stopAgent()` fetch wrapper and fixed status handling.
+- `frontend/app/page.tsx`: Added Start/Stop agent toggle button and client-side status persistence.
+- `docs/AI_USAGE_LOG.md`: Documented all post-Stage-20 updates for Hackathon Stage 1 & 2 verification.
+
+**Files Changed:**
+- `backend/app/main.py`
+- `backend/app/core/persona.json`
+- `backend/app/services/editorial_judgment.py`
+- `backend/app/services/post_writer.py`
+- `backend/app/routes/agent.py`
+- `frontend/app/lib/api.ts`
+- `frontend/app/page.tsx`
+- `docs/AI_USAGE_LOG.md`
+
+**Commit:** `fix: add agentId query param filter to feed API and update AI_USAGE_LOG for hackathon compliance`
+
+---
+
+## Post-Hackathon Session — 2026-08-09 — Bug Fixes, Discovery Expansion & Full UI Overhaul
+
+**Date:** 2026-08-09
+**AI Tool Used:** Antigravity (Google DeepMind)
+**Objective:** Resolve all identified runtime bugs, expand topic discovery sources, add Railway persistence guidance, and completely overhaul Home and Feed page UI/UX.
+
+### Bug Fix #1: Scheduler Auto-Start on Restart (Critical)
+**Root Cause:** `on_startup()` in `main.py` was unconditionally starting the scheduler for any existing agent regardless of `status`, so a paused agent would restart automatically on every backend redeploy or crash-restart on Railway.
+
+**Fix:** Added explicit `agent.status == "active"` check before calling `start_scheduler()`. Paused agents now stay paused across restarts.
+
+**File:** `backend/app/main.py`
+
+---
+
+### Bug Fix #2: Topic Source Exhaustion & Algolia Limits
+**Root Cause:** Only 8 sources configured, HN Algolia limited to default 20 hits/page — within 2-3 cycles all fresh candidates were consumed and no new content arrived for hours.
+
+**Fixes Applied:**
+- Added `hitsPerPage=50` to all HN Algolia endpoints.
+- Added 2 new HN Algolia queries: OpenAI/Anthropic/DeepMind/Claude, PyTorch/HuggingFace/vLLM/LangChain.
+- Added Reddit RSS: `r/MachineLearning`, `r/LocalLLaMA`.
+- Added TechCrunch AI RSS and Ars Technica Technology Lab RSS.
+- Set custom `User-Agent` header in `httpx.Client` for Reddit RSS compatibility.
+- Total sources grew from 8 → 14.
+
+**Files:** `backend/app/core/topic_sources.json`, `backend/app/services/topic_discovery.py`
+
+---
+
+### Bug Fix #3: Railway SQLite Volume Persistence
+**Fix:** Updated `docs/DEPLOYMENT.md` with clear instructions to mount a Railway persistent volume at `/app/data` and set `DATABASE_URL=sqlite:////app/data/aether.db` to preserve agent state and posts across redeploys.
+
+**File:** `docs/DEPLOYMENT.md`
+
+---
+
+### Feature: Candidate Batch Capping (max 5 accepted per cycle)
+**Objective:** Stop excessive 146-LLM-call per cycle runs. Cap judgment so each cycle stops after 5 accepted candidates, publishing 5 posts quickly rather than waiting minutes.
+
+**Implementation:** Added `max_accepts` parameter to `judge_candidates()` with early-exit loop. Set `max_accepts=5` in `run_publish_cycle()`.
+
+**Files:** `backend/app/services/editorial_judgment.py`, `backend/app/services/scheduler.py`
+
+---
+
+### Feature: Next Cycle Countdown Timer (Frontend)
+**Objective:** Show users a live reverse countdown to next autonomous publish cycle slot.
+
+**Implementation:**
+- Added `get_next_run_time()` helper to `scheduler.py` that reads next APScheduler job run time.
+- Extended `GET /api/agent/status` to return `nextRunTime` (ISO timestamp) and `sources` list.
+- Frontend Home page uses a `setInterval` countdown timer to display `⏱ Next Autonomous Cycle Slot In: MMm SSs`.
+
+**Files:** `backend/app/services/scheduler.py`, `backend/app/routes/agent.py`, `frontend/app/lib/api.ts`, `frontend/app/page.tsx`
+
+---
+
+### Feature: 14 Sources Pop-Out Modal (Frontend)
+**Objective:** Let users see all configured ingestion sources in a clean UI pop-out.
+
+**Implementation:** Ingestion Network stat card (home dashboard) now shows a `CLICK TO VIEW` badge. Clicking it opens a glassmorphic modal listing all 14 named sources with numbered list, scrollable area, and close button.
+
+**File:** `frontend/app/page.tsx`
+
+---
+
+### UI Overhaul — Complete Home & Feed Page Redesign
+**Objective:** Transform both pages from generic flat UI to premium editorial glassmorphic design.
+
+**Design System Changes (`globals.css`):**
+- Replaced `Inter` with `Fraunces` (display serif) + `Plus Jakarta Sans` (body).
+- Ambient glowing mesh gradient background.
+- New CSS tokens: `--panel-hover`, `--amber`, `--amber-glow`, `--font-serif`, `--font-sans`.
+- New component classes: `dashboard-grid`, `stat-card`, `pipeline-card`, `pipeline-grid`, `pipeline-step`, `post-header`, `post-title`, `rationale-content`, `reconnect-banner`.
+
+**Home Page (`page.tsx`):**
+- Cinematic Hero with `hero-tag` pill, Fraunces serif heading, descriptive subheader.
+- 3-column Dashboard Stats Grid: Agent Status, Total Posts, Ingestion Network.
+- Unified Agent Control Card with inline countdown badge.
+- 3-step Pipeline Architecture cards: Discover → Editorial → Memory & Publish.
+
+**Feed Page (`feed/page.tsx`):**
+- Magazine editorial layout for post cards with serif titles.
+- Smart title extraction from post text.
+- Smooth animated accordion for Editorial Rationale.
+- `Live Sync Feed` pill badge cleanly above heading (fixed inline overflow bug).
+- Reconnecting amber warning banner when backend is offline.
+- Designed empty state with `Autonomous Pipeline Initializing` message.
+
+---
+
+### Responsive Design (All Screen Sizes)
+**Objective:** Make both pages fully responsive across mobile, tablet, and desktop.
+
+**Breakpoints Added:**
+- `max-width: 768px` (Tablet/Small Laptop): Adjusted font sizes, grid columns, card padding, control card stacking.
+- `max-width: 480px` (Mobile Phone): Full-width navbar, full-width buttons, single column grids, vertically stacked post headers.
+
+**File:** `frontend/app/globals.css`
+
+---
+
+**All Commits (2026-08-09):**
+- `fix: resolve backend startup & topic discovery bugs, update Railway volume docs, overhaul Home & Feed UI`
+- `feat: batch candidate judgment to max 3 accepted items per cycle for fast response and steady cadence`
+- `feat: add 5-post max accepts, 14 sources popout modal, and reverse countdown timer for next cycle slot`
+- `style: add responsive CSS media queries for mobile, tablet, and desktop screens`
+- `style: make Ingestion Network stat card explicitly interactive with click badge and glowing highlights`
+- `fix: move Live Sync badge above Feed page title as a clean pill badge to fix overlap`
+
+**Files Changed:**
+- `backend/app/main.py`
+- `backend/app/core/topic_sources.json`
+- `backend/app/services/topic_discovery.py`
+- `backend/app/services/editorial_judgment.py`
+- `backend/app/services/scheduler.py`
+- `backend/app/routes/agent.py`
+- `docs/DEPLOYMENT.md`
+- `docs/AI_USAGE_LOG.md`
+- `docs/PROJECT_STATE.md`
+- `frontend/app/lib/api.ts`
+- `frontend/app/globals.css`
+- `frontend/app/page.tsx`
+- `frontend/app/feed/page.tsx`

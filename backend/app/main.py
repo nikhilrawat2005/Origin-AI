@@ -55,9 +55,11 @@ def on_startup():
         db = SessionLocal()
         try:
             agent = db.query(Agent).order_by(Agent.created_at.desc()).first()
-            if agent:
+            if agent and agent.status == "active":
                 logging.info(f"on_startup: Resuming scheduler for active agent {agent.id}")
                 start_scheduler(agent.id)
+            elif agent:
+                logging.info(f"on_startup: Agent {agent.id} is currently '{agent.status}'; scheduler not auto-started.")
         finally:
             db.close()
     except Exception as exc:

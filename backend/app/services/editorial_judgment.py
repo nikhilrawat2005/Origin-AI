@@ -183,16 +183,26 @@ def judge_candidates(
     agent_id: str,
     candidates: list[TopicCandidate],
     llm_provider: LLMProvider | None = None,
+    max_accepts: int | None = None,
 ) -> list[JudgmentResult]:
-    """Judge a batch of candidates (typically Stage 12's
-    `discover_new_topics()` output), one at a time.
-
-    Not wired into any route or scheduler yet — Stage 18 will chain
-    this after Stage 12's `discover_new_topics()` as the next step in
-    the discovery -> judgment -> memory -> generation -> publish flow.
+    """Judge a batch of candidates, one at a time. If `max_accepts` is set,
+    stops judging immediately once that many candidates have been accepted,
+    saving unnecessary LLM calls and latency.
     """
     provider = llm_provider or get_llm_provider()
-    return [
-        judge_candidate(db, agent_id, candidate, llm_provider=provider)
-        for candidate in candidates
-    ]
+    results: list[JudgmentResult] = []
+    accepted_count = 0
+
+    for candidate in candidates:
+        result = judge_candidate(db, agent_id, candidate, llm_provider=provider)
+        results.append(result)
+        if result.accepted:
+            accepted_count += 1
+            if max_accepts is not None and accepted_count >= max_accepts:
+                logger.info(
+                    "judge_candidates: reached max_accepts limit (%d), pausing judgment for remaining candidates.",
+                    max_accepts,
+                )
+                break
+
+    return results

@@ -60,16 +60,10 @@ git push -u origin main
    # {"status":"ok","app":"aether-backend","env":"production"}
    ```
 
-   > **SQLite on Railway note:** `DATABASE_URL=sqlite:///./aether.db`
-   > writes to the service's ephemeral local filesystem, which is
-   > **not persisted across redeploys** — a redeploy wipes the agent
-   > and its published posts, and the evaluator would need to call
-   > `/init` again. This matches the locked tech stack in
-   > `PROJECT_STATUS.md` §3 (SQLite via SQLAlchemy) and was flagged,
-   > not silently worked around: `DATABASE_URL` is fully
-   > env-driven (`core/config.py`), so switching to a Railway Postgres
-   > plugin later is a one-variable change with zero code changes,
-   > should persistence across redeploys become a requirement.
+   > **SQLite Persistence on Railway note:** By default, SQLite writes to the container's ephemeral disk. To persist data across Railway redeploys without switching to Postgres:
+   > 1. In Railway backend service settings, add a **Volume** mounted at `/app/data`.
+   > 2. Update `DATABASE_URL` environment variable to `sqlite:////app/data/aether.db`.
+   > 3. This ensures agent status, posts, and candidate cache survive process restarts and redeployments seamlessly.
 
 ## 3. Create the frontend service
 

@@ -43,6 +43,7 @@ class FeedPost(BaseModel):
 
     id: str
     createdAt: datetime
+    title: str = ""
     text: str
     rationale: str
     sources: list[str]

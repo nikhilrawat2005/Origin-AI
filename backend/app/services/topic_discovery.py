@@ -184,7 +184,7 @@ def fetch_source(source: dict, client: httpx.Client) -> list[TopicCandidate]:
         raise TopicSourceError(f"Unknown topic source type: {source_type!r} for source {name!r}")
 
     try:
-        response = client.get(url, timeout=FETCH_TIMEOUT_SECONDS)
+        response = client.get(url, timeout=FETCH_TIMEOUT_SECONDS, follow_redirects=True)
         response.raise_for_status()
     except (httpx.HTTPError, httpx.HTTPStatusError) as exc:
         logger.warning("Topic source fetch failed for %r: %s", name, exc)
@@ -209,7 +209,12 @@ def discover_topics(sources: Optional[list[dict]] = None, client: Optional[httpx
     """
     sources = sources if sources is not None else load_topic_sources()
     owns_client = client is None
-    client = client if client is not None else httpx.Client()
+    client = client if client is not None else httpx.Client(
+        follow_redirects=True,
+        headers={
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/127.0.0.0 Safari/537.36 AetherBot/1.0"
+        },
+    )
 
     all_candidates: list[TopicCandidate] = []
     try:

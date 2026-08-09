@@ -18,6 +18,7 @@ export type AgentInitResponse = {
 export type FeedPost = {
   id: string;
   createdAt: string;
+  title?: string;
   text: string;
   rationale: string;
   sources: string[];
@@ -52,6 +53,23 @@ export async function stopAgent(): Promise<{ status: string; message: string }> 
   const res = await fetch(`${API_URL}/api/agent/stop`, { method: "POST" });
   if (!res.ok) {
     throw new Error(`Stop failed: ${res.status}`);
+  }
+  return res.json();
+}
+
+export type AgentStatusResponse = {
+  status: "active" | "paused" | "not_initialized" | "initializing";
+  agentId: string | null;
+  nextRunTime?: string | null;
+  sources?: string[];
+};
+
+export async function getAgentStatus(): Promise<AgentStatusResponse> {
+  const res = await fetch(`${API_URL}/api/agent/status`, {
+    cache: "no-store",
+  });
+  if (!res.ok) {
+    throw new Error(`Status check failed: ${res.status}`);
   }
   return res.json();
 }
